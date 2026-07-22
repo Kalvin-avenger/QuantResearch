@@ -12,7 +12,6 @@ authors = [
 ]
 requires-python = ">=3.11"
 
-
 dependencies = [
     "numpy",
     "pandas",
@@ -22,6 +21,10 @@ dependencies = [
     "tqdm",
     "joblib"
 ]
+
+
+[tool.setuptools.packages.find]
+include = ["quantresearch*"]
 
 
 [tool.pytest.ini_options]
