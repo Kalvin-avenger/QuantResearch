@@ -1,27 +1,32 @@
 from quantresearch.portfolio import Portfolio
+from quantresearch.orders import Order
+from quantresearch.signals import Signal
+from quantresearch.execution import (
+    ExecutionResult,
+)
 
 
-def test_portfolio_buy_sell():
+def test_apply_execution():
 
     portfolio = Portfolio(
         initial_cash=100000
     )
 
-    assert portfolio.cash == 100000
-    assert portfolio.shares == 0
-
-
-    portfolio.buy(
-        price=100
+    order = Order(
+        action=Signal.BUY,
+        quantity=100,
     )
 
-    assert portfolio.shares == 1000
-    assert portfolio.cash == 0
-
-
-    portfolio.sell(
-        price=120
+    execution = ExecutionResult(
+        order=order,
+        execution_price=50,
     )
 
-    assert portfolio.shares == 0
-    assert portfolio.cash == 120000
+
+    portfolio.apply_execution(
+        execution
+    )
+
+
+    assert portfolio.shares == 100
+    assert portfolio.cash == 95000
