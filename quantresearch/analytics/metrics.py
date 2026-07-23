@@ -3,9 +3,6 @@ from dataclasses import dataclass
 
 @dataclass
 class PerformanceMetrics:
-    """
-    Performance statistics of a strategy.
-    """
 
     total_return: float
 
@@ -16,3 +13,16 @@ class PerformanceMetrics:
     sharpe: float
 
     max_drawdown: float
+
+
+    def summary(self):
+
+        return (
+            "Performance Report\n"
+            "==================\n"
+            f"Total Return : {self.total_return:.2%}\n"
+            f"CAGR         : {self.cagr:.2%}\n"
+            f"Volatility   : {self.volatility:.2%}\n"
+            f"Sharpe       : {self.sharpe:.2f}\n"
+            f"Max Drawdown : {self.max_drawdown:.2%}"
+        )

@@ -17,3 +17,23 @@ def test_metrics_creation():
     assert metrics.volatility == 0.15
     assert metrics.sharpe == 0.67
     assert metrics.max_drawdown == -0.25
+
+def test_metrics_summary():
+
+    metrics = PerformanceMetrics(
+        total_return=0.20,
+        cagr=0.10,
+        volatility=0.15,
+        sharpe=0.67,
+        max_drawdown=-0.25,
+    )
+
+
+    report = metrics.summary()
+
+
+    assert "Performance Report" in report
+
+    assert "20.00%" in report
+
+    assert "0.67" in report
