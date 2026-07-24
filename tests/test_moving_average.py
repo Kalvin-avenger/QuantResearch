@@ -17,3 +17,19 @@ def test_calculate_sma():
             assert pd.isna(actual)
         else:
             assert actual == exp
+
+
+import pytest
+
+from quantresearch.indicators import calculate_sma
+
+
+def test_calculate_sma_invalid_window():
+
+    prices = pd.Series([1, 2, 3])
+
+    with pytest.raises(ValueError):
+        calculate_sma(
+            prices,
+            window=0,
+        )

@@ -46,22 +46,18 @@ class PerformanceAnalyzer:
             1
         )
 
-
-        volatility = (
-            np.std(
-                daily_returns,
-                ddof=1
-            )
-            *
-            np.sqrt(252)
-        )
-
-
         daily_std = np.std(
             daily_returns,
             ddof=1
         )
 
+        volatility = (
+            daily_std *
+            np.sqrt(252)
+        )
+
+        if np.isnan(volatility):
+            volatility = 0
 
         if daily_std != 0:
 

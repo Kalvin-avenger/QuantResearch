@@ -6,7 +6,23 @@ def calculate_sma(
     window: int,
 ) -> pd.Series:
     """
-    Calculate Simple Moving Average.
+    Calculate the simple moving average.
+
+    Args:
+        series:
+            Input price series.
+
+        window:
+            Rolling window size.
+
+    Returns:
+        A pandas Series containing the SMA values.
     """
 
+    if window <= 0:
+        raise ValueError(
+            "window must be greater than 0."
+        )
+
     return series.rolling(window=window).mean()
+
