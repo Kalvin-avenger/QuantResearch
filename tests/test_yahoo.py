@@ -1,4 +1,4 @@
-from quantresearch.data.yahoo import download_price_data
+from quantresearch.data import download_price_data
 
 
 def test_download_price_data():
@@ -8,5 +8,11 @@ def test_download_price_data():
     )
 
     assert not df.empty
-    assert "Close" in df.columns
-    assert "Volume" in df.columns
+    assert "close" in df.columns
+    assert "volume" in df.columns
+
+def test_download_price_data_public_api():
+
+    from quantresearch.data import download_price_data
+
+    assert callable(download_price_data)

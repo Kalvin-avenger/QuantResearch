@@ -1,5 +1,6 @@
-from quantresearch.orders import order
+
 from quantresearch.signals import Signal
+from quantresearch.execution import ExecutionResult
 
 
 class Portfolio:
@@ -9,7 +10,7 @@ class Portfolio:
     Uses all available cash when buying.
     """
 
-    from quantresearch.signals import Signal
+    
 
     def __init__(
         self,
@@ -23,7 +24,12 @@ class Portfolio:
     def buy(
         self,
         price: float,
-    ):
+    ) -> None:
+
+        if price <= 0:
+            raise ValueError(
+            "Price must be positive."
+            )
 
         if self.cash <= 0:
             return
@@ -42,7 +48,7 @@ class Portfolio:
     def sell(
         self,
         price: float,
-    ):
+    ) -> None:
 
         if self.shares <= 0:
             return
@@ -52,13 +58,18 @@ class Portfolio:
             self.shares * price
         )
 
+        if price <= 0:
+            raise ValueError(
+                "Price must be positive."
+            )
+
 
         self.shares = 0
 
     def apply_execution(
-        self,
-        execution
-    ):
+            self,
+            execution: ExecutionResult,
+        ) -> None:
         order = execution.order
 
         price = execution.execution_price

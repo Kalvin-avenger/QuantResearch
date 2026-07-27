@@ -23,8 +23,15 @@ class Executor:
         price: float,
     ) -> ExecutionResult:
 
-        order.price = price
+        if price <= 0:
+            raise ValueError(
+                "Execution price must be positive."
+            )
 
+        if order.quantity <= 0:
+            raise ValueError(
+                "Order quantity must be positive."
+            )
 
         return ExecutionResult(
             order=order,

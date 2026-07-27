@@ -8,4 +8,4 @@ def test_validate_price_data():
         start_date="2024-01-01",
     )
 
-    assert validate_price_data(df)
+    validate_price_data(df)

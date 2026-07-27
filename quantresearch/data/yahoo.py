@@ -1,5 +1,5 @@
-import yfinance as yf
 import pandas as pd
+import yfinance as yf
 
 from quantresearch.logger import get_logger
 
@@ -51,5 +51,17 @@ def download_price_data(
         )
 
     data.reset_index(inplace=True)
+
+    if isinstance(data.columns, pd.MultiIndex):
+
+        data.columns = [
+            col[0]
+            for col in data.columns
+        ]
+
+    data.columns = [
+            col.lower()
+            for col in data.columns
+        ]
 
     return data

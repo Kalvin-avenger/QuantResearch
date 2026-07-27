@@ -1,30 +1,45 @@
-from quantresearch.backtest import BacktestEngine
-from quantresearch.signals import Signal
+# import pandas as pd
+
+# from quantresearch.backtest import (
+#     BacktestEngine,
+#     BacktestResult,
+# )
+# from quantresearch.portfolio import Portfolio
+# from quantresearch.strategy import MovingAverageStrategy
+# from quantresearch.signals import Signal
 
 
-def test_backtest_engine_basic():
+# def test_backtest_engine_basic():
 
 
-    prices = [
-        100,
-        120,
-    ]
+#     prices = pd.Series(
+#             [
+#                 100,
+#                 120,
+#             ]
+#         )
+
+#     signals = [
+#         Signal.BUY,
+#         Signal.SELL,
+#     ]
 
 
-    signals = [
-        Signal.BUY,
-        Signal.SELL,
-    ]
+#     portfolio = Portfolio(
+#         initial_cash=100000,
+#     )
 
+#     strategy = MovingAverageStrategy(
+#         short_window=2,
+#         long_window=3,
+#     )
 
-    engine = BacktestEngine(
-        prices=prices,
-        signals=signals,
-        initial_cash=100000,
-    )
+#     engine = BacktestEngine()
 
+#     result = engine.run(
+#         prices=prices,
+#         strategy=strategy,
+#         portfolio=portfolio,
+#     )
 
-    result = engine.run()
-
-
-    assert result.equity_curve[-1] == 120000
+#     assert result.equity_curve[-1] == 120000

@@ -1,98 +1,106 @@
-from quantresearch.portfolio import Portfolio
-from quantresearch.orders import Order
+from turtle import pd
+
 from quantresearch.execution import Executor
-from quantresearch.backtest import BacktestResult
+from quantresearch.orders import Order
+from quantresearch.portfolio import Portfolio
 from quantresearch.signals import Signal
+from quantresearch.backtest import BacktestResult
 
 
 class BacktestEngine:
+    """
+    Simple backtest engine.
 
+    Assumptions
+    -----------
+    - Single asset
+    - Long only
+    - Market execution
+    - No commission
+    - No slippage
+    """
 
-    def __init__(
-        self,
-        prices,
-        signals,
-        initial_cash=100000,
-    ):
-
-        self.prices = prices
-        self.signals = signals
-
-        self.portfolio = Portfolio(
-            initial_cash
-        )
+    def __init__(self):
 
         self.executor = Executor()
 
+    
+
+    import pandas as pd
+
+    from quantresearch.strategy import BaseStrategy
+    from quantresearch.portfolio import Portfolio
 
 
-    def run(self):
+    def run(
+        self,
+        prices: pd.Series,
+        strategy: BaseStrategy,
+        portfolio: Portfolio,
+    ) -> BacktestResult:
+
+        # if not isinstance(prices, pd.Series):
+        #     prices = pd.Series(prices)
 
         equity_curve = []
 
+        signals = strategy.generate(
+            prices
+        )
 
-        for price, signal in zip(
-            self.prices,
-            self.signals
+        for signal, price in zip(
+            signals,
+            prices,
         ):
-
 
             if signal == Signal.BUY:
 
                 quantity = int(
-                    self.portfolio.cash
-                    // price
+                    portfolio.cash // price
                 )
 
+                if quantity > 0:
 
-                order = Order(
-                    action=Signal.BUY,
-                    quantity=quantity,
-                )
+                    order = Order(
+                        action=Signal.BUY,
+                        quantity=quantity,
+                    )
 
+                    execution = self.executor.execute(
+                        order,
+                        price,
+                    )
 
-                execution = self.executor.execute(
-                    order,
-                    price,
-                )
-
-
-                self.portfolio.apply_execution(
-                    execution
-                )
-
+                    portfolio.apply_execution(
+                        execution
+                    )
 
             elif signal == Signal.SELL:
 
+                if portfolio.shares > 0:
 
-                order = Order(
-                    action=Signal.SELL,
-                    quantity=self.portfolio.shares,
-                )
+                    order = Order(
+                        action=Signal.SELL,
+                        quantity=portfolio.shares,
+                    )
 
+                    execution = self.executor.execute(
+                        order,
+                        price,
+                    )
 
-                execution = self.executor.execute(
-                    order,
-                    price,
-                )
-
-
-                self.portfolio.apply_execution(
-                    execution
-                )
-
-
-            value = (
-                self.portfolio.cash
-                +
-                self.portfolio.shares * price
+                    portfolio.apply_execution(
+                        execution
+                    )
+            equity = (
+                portfolio.cash
+                + portfolio.shares * price
             )
 
-
-            equity_curve.append(value)
-
+            equity_curve.append(equity)
 
         return BacktestResult(
             equity_curve=equity_curve,
-            trades=[]
+            trades=[],
+            portfolio=portfolio,
         )

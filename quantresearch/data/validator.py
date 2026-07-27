@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 
 def validate_price_data(
     df: pd.DataFrame
-) -> bool:
+) -> None:
     """
     Validate historical price dataframe.
     """
@@ -28,9 +28,9 @@ def validate_price_data(
     # Check required columns
 
     required_columns = [
-        "Date",
-        "Close",
-        "Volume"
+        "date",
+        "close",
+        "volume",
     ]
 
     missing_columns = [
@@ -47,7 +47,7 @@ def validate_price_data(
 
     # Check duplicate dates
 
-    if df["Date"].duplicated().any():
+    if df["date"].duplicated().any():
 
         raise ValueError(
             "Duplicate dates found"
@@ -56,7 +56,7 @@ def validate_price_data(
 
     # Check sorting
 
-    if not df["Date"].is_monotonic_increasing:
+    if not df["date"].is_monotonic_increasing:
 
         raise ValueError(
             "Dates are not sorted"
@@ -76,4 +76,4 @@ def validate_price_data(
         "Data validation passed"
     )
 
-    return True
+    return None

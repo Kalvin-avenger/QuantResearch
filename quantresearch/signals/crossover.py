@@ -1,6 +1,6 @@
 import pandas as pd
 
-from quantresearch.signals import Signal
+from .signal import Signal
 
 
 def generate_crossover_signal(
@@ -10,12 +10,19 @@ def generate_crossover_signal(
     """
     Generate trading signals based on moving average crossover.
 
-    Rules
-    -----
-    - NONE: Either moving average is NaN.
-    - BUY : short_ma crosses above long_ma.
-    - SELL: short_ma crosses below long_ma.
-    - HOLD: Otherwise.
+    Args:
+        short_ma:
+            Short-term moving average.
+
+        long_ma:
+            Long-term moving average.
+
+    Returns:
+        A Series of Signal values.
+
+    Raises:
+        ValueError:
+            If the two input series have different lengths.
     """
 
     if len(short_ma) != len(long_ma):

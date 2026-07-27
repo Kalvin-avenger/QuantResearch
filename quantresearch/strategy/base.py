@@ -1,10 +1,9 @@
-class BaseStrategy:
+from abc import ABC
+from abc import abstractmethod
 
-    """
-    Base class for all trading strategies.
-    """
 
+class BaseStrategy(ABC):
+
+    @abstractmethod
     def generate(self, prices):
-        raise NotImplementedError(
-            "Strategy must implement generate()."
-        )
+        pass
