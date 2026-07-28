@@ -19,12 +19,12 @@ and follows production-level software engineering practices.
 
 ## Roadmap
 
-- [x] Sprint 1
+- [X] Sprint 1
     - [ ] Project Structure
     - [ ] Yahoo Downloader
     - [ ] Indicators
     - [ ] MA Strategy
-    - [ ] Backtest Engine
+    - [X] Backtest Engine
     - [ ] Performance
     - [ ] Plot
 
@@ -49,16 +49,29 @@ and follows production-level software engineering practices.
 
 ## Features
 
-- Yahoo Finance Downloader
-- Modular Indicators
-- Strategy Interface
-- Event-driven Backtest
+- Download historical market data from Yahoo Finance
+- Technical indicators (SMA)
+- Moving Average Crossover Strategy
+- Event-driven Backtest Engine
 - Portfolio Simulation
-- Performance Analysis
-- Parameter Optimization
-- Machine Learning Ready
+- Performance Metrics
+  - Total Return
+  - CAGR
+  - Volatility
+  - Sharpe Ratio
+  - Maximum Drawdown
+- End-to-End Example
+- Unit & Integration Tests
 
 ---
+
+
+## Quick Start
+
+```bash
+pytest
+python examples/run_ma.py
+```
 
 ## License
 

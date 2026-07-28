@@ -37,12 +37,14 @@ class BacktestEngine:
         #     prices = pd.Series(prices)
 
         equity_curve = []
+        trades = []
 
         signals = strategy.generate(
             prices
         )
 
-        for signal, price in zip(
+        for timestamp, signal, price in zip(
+            prices.index,
             signals,
             prices,
         ):
@@ -69,6 +71,17 @@ class BacktestEngine:
                         execution
                     )
 
+                    from quantresearch.execution.trade import Trade
+
+                    trades.append(
+                        Trade(
+                            timestamp=pd.Timestamp(timestamp),
+                            action=execution.order.action,
+                            quantity=execution.order.quantity,
+                            price=execution.execution_price,
+                        )
+                    )
+
             elif signal == Signal.SELL:
 
                 if portfolio.shares > 0:
@@ -86,6 +99,15 @@ class BacktestEngine:
                     portfolio.apply_execution(
                         execution
                     )
+
+                    trades.append(
+                        Trade(
+                            timestamp=pd.Timestamp(timestamp),
+                            action=execution.order.action,
+                            quantity=execution.order.quantity,
+                            price=execution.execution_price,
+                        )
+                    )
             equity = (
                 portfolio.cash
                 + portfolio.shares * price
@@ -95,6 +117,6 @@ class BacktestEngine:
 
         return BacktestResult(
             equity_curve=equity_curve,
-            trades=[],
+            trades=trades,
             portfolio=portfolio,
         )
