@@ -1,4 +1,6 @@
-from turtle import pd
+import pandas as pd
+
+from quantresearch.strategy import BaseStrategy
 
 from quantresearch.execution import Executor
 from quantresearch.orders import Order
@@ -23,14 +25,6 @@ class BacktestEngine:
     def __init__(self):
 
         self.executor = Executor()
-
-    
-
-    import pandas as pd
-
-    from quantresearch.strategy import BaseStrategy
-    from quantresearch.portfolio import Portfolio
-
 
     def run(
         self,

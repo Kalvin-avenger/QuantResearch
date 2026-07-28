@@ -16,6 +16,12 @@ class Executor:
     Simple market execution simulator.
     """
 
+    def __init__(
+        self,
+        slippage=0.0,
+    ):
+        self.slippage = slippage
+
 
     def execute(
         self,
