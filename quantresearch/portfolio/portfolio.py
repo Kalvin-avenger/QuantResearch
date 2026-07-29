@@ -1,6 +1,5 @@
-
 from quantresearch.signals import Signal
-from quantresearch.execution import ExecutionResult
+from quantresearch.accounting import Position
 
 
 class Portfolio:
@@ -10,16 +9,18 @@ class Portfolio:
     Uses all available cash when buying.
     """
 
-    
-
     def __init__(
         self,
         initial_cash: float,
     ):
 
-        self.cash = initial_cash
-        self.shares = 0
+        if initial_cash < 0:
+            raise ValueError(
+                "Initial cash cannot be negative."
+            )
 
+        self.cash = initial_cash
+        self.position = Position()
 
     def buy(
         self,
@@ -28,75 +29,80 @@ class Portfolio:
 
         if price <= 0:
             raise ValueError(
-            "Price must be positive."
+                "Price must be positive."
             )
 
         if self.cash <= 0:
             return
 
-
-        self.shares = int(
+        quantity = int(
             self.cash // price
         )
 
+        if quantity <= 0:
+            return
 
-        self.cash -= (
-            self.shares * price
+        cost = quantity * price
+
+        self.cash -= cost
+
+        self.position.buy(
+            quantity=quantity,
+            price=price,
         )
-
 
     def sell(
         self,
         price: float,
     ) -> None:
 
-        if self.shares <= 0:
-            return
-
-
-        self.cash += (
-            self.shares * price
-        )
-
         if price <= 0:
             raise ValueError(
                 "Price must be positive."
             )
 
+        quantity = self.position.quantity
 
-        self.shares = 0
+        if quantity <= 0:
+            return
+
+        self.position.sell(
+            quantity=quantity,
+            price=price,
+        )
+
+        self.cash += quantity * price
 
     def apply_execution(
-            self,
-            execution: ExecutionResult,
-        ) -> None:
-        order = execution.order
+        self,
+        execution,
+    ) -> None:
 
+        quantity = execution.order.quantity
         price = execution.execution_price
+        action = execution.order.action
 
-        if order.action == Signal.BUY:
+        if action == Signal.BUY:
 
-            cost = (
-                order.quantity * price
-            )
+            cost = quantity * price
 
             if cost > self.cash:
                 raise ValueError(
                     "Insufficient cash."
                 )
 
-            self.shares += order.quantity
             self.cash -= cost
 
-
-        elif order.action == Signal.SELL:
-
-            if order.quantity > self.shares:
-                raise ValueError(
-                    "Insufficient shares."
-                )
-
-            self.shares -= order.quantity
-            self.cash += (
-                order.quantity * price
+            self.position.buy(
+                quantity=quantity,
+                price=price,
             )
+
+        elif action == Signal.SELL:
+
+            self.position.sell(
+                quantity=quantity,
+                price=price,
+            )
+
+            self.cash += quantity * price

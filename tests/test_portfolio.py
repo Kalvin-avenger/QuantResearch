@@ -30,33 +30,43 @@ def test_apply_execution():
     )
 
 
-    assert portfolio.shares == 100
+    assert portfolio.position.quantity == 100
     assert portfolio.cash == 95000
 
 def test_apply_execution_sell():
 
     portfolio = Portfolio(
-        initial_cash=0
+        initial_cash=10000,
     )
 
-    portfolio.shares = 100
-
-    order = Order(
-        action=Signal.SELL,
-        quantity=50,
+    buy_execution = ExecutionResult(
+        order=Order(
+            action=Signal.BUY,
+            quantity=100,
+        ),
+        execution_price=20,
     )
 
-    execution = ExecutionResult(
-        order=order,
+    portfolio.apply_execution(
+        buy_execution,
+    )
+
+    sell_execution = ExecutionResult(
+        order=Order(
+            action=Signal.SELL,
+            quantity=50,
+        ),
         execution_price=40,
     )
 
     portfolio.apply_execution(
-        execution
+        sell_execution,
     )
 
-    assert portfolio.shares == 50
-    assert portfolio.cash == 2000
+    assert portfolio.cash == 10000
+    assert portfolio.position.quantity == 50
+    assert portfolio.position.quantity == 50
+    assert portfolio.position.avg_price == 20
 
 def test_apply_execution_insufficient_cash():
 
@@ -85,8 +95,10 @@ def test_apply_execution_insufficient_shares():
         initial_cash=1000
     )
 
-    portfolio.shares = 5
-
+    portfolio.position.buy(
+        quantity=5,
+        price=100,
+    )
     order = Order(
         action=Signal.SELL,
         quantity=10,
@@ -101,3 +113,30 @@ def test_apply_execution_insufficient_shares():
         portfolio.apply_execution(
             execution
         )
+
+
+from quantresearch.portfolio import Portfolio
+from quantresearch.accounting import Position
+
+
+def test_portfolio_contains_position():
+
+    portfolio = Portfolio(
+        initial_cash=10000,
+    )
+
+    assert isinstance(
+        portfolio.position,
+        Position,
+    )
+
+def test_portfolio_does_not_expose_legacy_shares():
+
+    portfolio = Portfolio(
+        initial_cash=10000,
+    )
+
+    assert not hasattr(
+        portfolio,
+        "shares",
+    )

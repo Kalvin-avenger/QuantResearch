@@ -51,10 +51,11 @@ class BacktestEngine:
 
             if signal == Signal.BUY:
 
-                quantity = int(
-                    portfolio.cash // price
-                )
+                if portfolio.position.quantity == 0:
 
+                    quantity = int(
+                        portfolio.cash / price
+                    )
                 if quantity > 0:
 
                     order = Order(
@@ -84,12 +85,9 @@ class BacktestEngine:
 
             elif signal == Signal.SELL:
 
-                if portfolio.shares > 0:
+                if portfolio.position.quantity > 0:
 
-                    order = Order(
-                        action=Signal.SELL,
-                        quantity=portfolio.shares,
-                    )
+                    quantity = portfolio.position.quantity
 
                     execution = self.executor.execute(
                         order,
@@ -110,7 +108,7 @@ class BacktestEngine:
                     )
             equity = (
                 portfolio.cash
-                + portfolio.shares * price
+                + portfolio.position.quantity * price
             )
 
             equity_curve.append(equity)
