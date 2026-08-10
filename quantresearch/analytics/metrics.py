@@ -14,6 +14,7 @@ class PerformanceMetrics:
     sharpe: float
 
     max_drawdown: float
+    
 
 
     def summary(self):
@@ -38,6 +39,28 @@ class TradeStatistics:
 
     sell_trades: int
 
-    first_trade: pd.Timestamp
+    first_trade_time: pd.Timestamp | None
 
-    last_trade: pd.Timestamp
+    last_trade_time: pd.Timestamp | None
+
+    winning_trades: int
+
+    losing_trades: int
+
+    win_rate: float
+
+    average_win: float
+
+    average_loss: float
+
+    profit_factor: float
+
+    expectancy: float
+
+    completed_trades: int
+
+    breakeven_trades: int
+
+    average_holding_period: pd.Timedelta | None
+
+    largest_win: float

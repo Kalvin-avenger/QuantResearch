@@ -1,8 +1,7 @@
 import pandas as pd
 
 from quantresearch.strategy import BaseStrategy
-
-from quantresearch.execution import Executor
+from quantresearch.execution import Executor, Trade
 from quantresearch.orders import Order
 from quantresearch.portfolio import Portfolio
 from quantresearch.signals import Signal
@@ -33,9 +32,6 @@ class BacktestEngine:
         portfolio: Portfolio,
     ) -> BacktestResult:
 
-        # if not isinstance(prices, pd.Series):
-        #     prices = pd.Series(prices)
-
         equity_curve = []
         trades = []
 
@@ -54,44 +50,52 @@ class BacktestEngine:
                 if portfolio.position.quantity == 0:
 
                     quantity = int(
-                        portfolio.cash / price
-                    )
-                if quantity > 0:
-
-                    order = Order(
-                        action=Signal.BUY,
-                        quantity=quantity,
+                        portfolio.cash // price
                     )
 
-                    execution = self.executor.execute(
-                        order,
-                        price,
-                    )
+                    if quantity > 0:
 
-                    portfolio.apply_execution(
-                        execution
-                    )
-
-                    from quantresearch.execution.trade import Trade
-
-                    trades.append(
-                        Trade(
-                            timestamp=pd.Timestamp(timestamp),
-                            action=execution.order.action,
-                            quantity=execution.order.quantity,
-                            price=execution.execution_price,
+                        order = Order(
+                            action=Signal.BUY,
+                            quantity=quantity,
                         )
-                    )
+
+                        execution = self.executor.execute(
+                            order=order,
+                            price=price,
+                        )
+
+                        portfolio.apply_execution(
+                            execution
+                        )
+
+                        trades.append(
+                            Trade(
+                                timestamp=pd.Timestamp(
+                                    timestamp
+                                ),
+                                action=execution.order.action,
+                                quantity=execution.order.quantity,
+                                price=execution.execution_price,
+                            )
+                        )
 
             elif signal == Signal.SELL:
 
                 if portfolio.position.quantity > 0:
 
-                    quantity = portfolio.position.quantity
+                    quantity = (
+                        portfolio.position.quantity
+                    )
+
+                    order = Order(
+                        action=Signal.SELL,
+                        quantity=quantity,
+                    )
 
                     execution = self.executor.execute(
-                        order,
-                        price,
+                        order=order,
+                        price=price,
                     )
 
                     portfolio.apply_execution(
@@ -100,18 +104,22 @@ class BacktestEngine:
 
                     trades.append(
                         Trade(
-                            timestamp=pd.Timestamp(timestamp),
+                            timestamp=pd.Timestamp(
+                                timestamp
+                            ),
                             action=execution.order.action,
                             quantity=execution.order.quantity,
                             price=execution.execution_price,
                         )
                     )
-            equity = (
-                portfolio.cash
-                + portfolio.position.quantity * price
+
+            equity = portfolio.total_equity(
+                price=price,
             )
 
-            equity_curve.append(equity)
+            equity_curve.append(
+                equity
+            )
 
         return BacktestResult(
             equity_curve=equity_curve,

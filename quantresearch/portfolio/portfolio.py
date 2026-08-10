@@ -12,6 +12,7 @@ class Portfolio:
     def __init__(
         self,
         initial_cash: float,
+        
     ):
 
         if initial_cash < 0:
@@ -21,6 +22,7 @@ class Portfolio:
 
         self.cash = initial_cash
         self.position = Position()
+        self.realized_pnl = 0.0
 
     def buy(
         self,
@@ -100,9 +102,50 @@ class Portfolio:
 
         elif action == Signal.SELL:
 
-            self.position.sell(
+            realized_pnl = self.position.sell(
                 quantity=quantity,
                 price=price,
             )
 
             self.cash += quantity * price
+
+            self.realized_pnl += realized_pnl
+
+    def market_value(
+        self,
+        price: float,
+    ) -> float:
+
+        if price <= 0:
+            raise ValueError(
+                "Price must be positive."
+            )
+
+        return (
+            self.position.quantity
+            * price
+        )
+
+    def unrealized_pnl(
+        self,
+        price: float,
+    ) -> float:
+
+        if price <= 0:
+            raise ValueError(
+                "Price must be positive."
+            )
+
+        return (
+            price - self.position.avg_price
+        ) * self.position.quantity
+
+    def total_equity(
+        self,
+        price: float,
+    ) -> float:
+
+        return (
+            self.cash
+            + self.market_value(price)
+        )
