@@ -1,78 +1,35 @@
-# QuantResearch
+## Current Development Status
 
-> An institution-grade quantitative research platform built in Python.
+QuantResearch is a test-driven Python backtesting framework for
+systematic strategy research.
 
----
+Current capabilities include:
 
-## Vision
+- Equity price data loading and validation
+- Moving-average strategy framework
+- Order and execution modeling with slippage
+- Portfolio and position accounting
+- Performance and trade analytics
+- Yahoo option-chain ingestion and normalization
+- Option contract modeling and OCC/Yahoo symbol parsing
+- ATM / DTE / LEAPS contract selection
+- Option position accounting, including:
+  - weighted-average cost
+  - unrealized PnL
+  - realized PnL
+  - partial and full exits
 
-QuantResearch is designed for systematic trading research,
-machine learning alpha generation,
-portfolio construction,
-and strategy evaluation.
+### Current Development Phase
 
-The framework is modular,
-easy to extend,
-and follows production-level software engineering practices.
+Completed through **Sprint 12**.
 
----
+Next:
 
-## Roadmap
+**Sprint 13 — Option Order & Execution**
 
-- [X] Sprint 1
-    - [ ] Project Structure
-    - [ ] Yahoo Downloader
-    - [ ] Indicators
-    - [ ] MA Strategy
-    - [X] Backtest Engine
-    - [ ] Performance
-    - [ ] Plot
+Planned execution pipeline:
 
-- [ ] Sprint 2
-    - Momentum
-    - Breakout
-    - Mean Reversion
-
-- [ ] Sprint 3
-    - Portfolio Backtest
-
-- [ ] Sprint 4
-    - Cross-sectional Momentum
-
-- [ ] Sprint 5
-    - Machine Learning
-
-- [ ] Sprint 6
-    - Regime Detection
-
----
-
-## Features
-
-- Download historical market data from Yahoo Finance
-- Technical indicators (SMA)
-- Moving Average Crossover Strategy
-- Event-driven Backtest Engine
-- Portfolio Simulation
-- Performance Metrics
-  - Total Return
-  - CAGR
-  - Volatility
-  - Sharpe Ratio
-  - Maximum Drawdown
-- End-to-End Example
-- Unit & Integration Tests
-
----
-
-
-## Quick Start
-
-```bash
-pytest
-python examples/run_ma.py
-```
-
-## License
-
-MIT
+OptionOrder
+→ OptionExecutor
+→ OptionExecutionResult
+→ OptionPosition / Portfolio
