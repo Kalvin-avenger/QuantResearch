@@ -12,6 +12,9 @@ from quantresearch.data.options import OptionQuote
 from quantresearch.data.option_provider import (
     HistoricalOptionDataProvider,
 )
+from quantresearch.execution.option_quote_protocol import (
+    ExecutableOptionQuote,
+)
 
 
 class BacktestEngine:
@@ -90,7 +93,7 @@ class BacktestEngine:
     def _execute_option_order(
         self,
         order: OptionOrder,
-        quote: OptionQuote,
+        quote: ExecutableOptionQuote,
         portfolio: Portfolio,
     ) -> None:
 

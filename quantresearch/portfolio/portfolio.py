@@ -203,14 +203,18 @@ class Portfolio:
 
         else:
             if contract not in self.option_positions:
-                raise ValueError("option position does not exist")
+                raise ValueError(
+                    "option position does not exist"
+                )
 
             position = self.option_positions[contract]
 
-            position.sell(
+            realized_pnl = position.sell(
                 quantity=order.quantity,
                 price=execution.execution_price,
             )
+
+            self.realized_pnl += realized_pnl
 
             proceeds = (
                 order.quantity
