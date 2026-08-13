@@ -1,0 +1,37 @@
+                    MARKET DATA
+                         │
+          ┌──────────────┴──────────────┐
+          │                             │
+     Equity Prices                Option Market Data
+                                        │
+                             ┌──────────┴──────────┐
+                             │                     │
+                         Quotes                  Bars
+                             │                     │
+                             └──────────┬──────────┘
+                                        │
+                                 Pricing Adapter
+                                        │
+                                        ▼
+Strategy ────────────────→ Instruction / Intent
+                                        │
+                                        ▼
+                                Order Resolver
+                                        │
+                                        ▼
+                                      Order
+                                        │
+                                        ▼
+                                    Executor
+                                        │
+                                        ▼
+                                    Portfolio
+                                        │
+                                        ▼
+                                  Mark-to-Market
+                                        │
+                                        ▼
+                                  BacktestResult
+                                        │
+                                        ▼
+                                    Analytics

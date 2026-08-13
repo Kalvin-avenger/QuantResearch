@@ -9,6 +9,9 @@ from quantresearch.signals import Signal
 from quantresearch.strategy.leaps_buy_and_hold import (
     LeapsBuyAndHoldStrategy,
 )
+from quantresearch.orders.option_order_intent import (
+    OptionOrderIntent,
+)
 
 
 def test_leaps_buy_and_hold_strategy_selects_and_buys_leaps():
@@ -53,7 +56,7 @@ def test_leaps_buy_and_hold_strategy_selects_and_buys_leaps():
 
     strategy = LeapsBuyAndHoldStrategy(
         contracts=contracts,
-        quantity=1,
+        allocation_fraction=0.25,
         min_months=12,
         max_months=18,
     )
@@ -66,11 +69,11 @@ def test_leaps_buy_and_hold_strategy_selects_and_buys_leaps():
 
     assert isinstance(
         orders[0],
-        OptionOrder,
+        OptionOrderIntent,
     )
 
     assert orders[0].action == Signal.BUY
-    assert orders[0].quantity == 1
+    assert orders[0].allocation_fraction == 0.25
 
     assert (
         orders[0].contract.expiration

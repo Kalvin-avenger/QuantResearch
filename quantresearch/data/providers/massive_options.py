@@ -187,6 +187,11 @@ class MassiveHttpClient:
                 headers=headers,
             )
 
+            # response.raise_for_status()
+            if not response.ok:
+                print("status:", response.status_code)
+                print("response:", response.text)
+
             response.raise_for_status()
 
             data = response.json()
@@ -205,3 +210,51 @@ class MassiveHttpClient:
             params = None
 
         return quotes
+
+    def get_aggregate_bars(
+        self,
+        ticker: str,
+        start_date,
+        end_date,
+        multiplier: int = 1,
+        timespan: str = "day",
+    ) -> list[dict]:
+
+        url = (
+            f"{self.BASE_URL}"
+            f"/v2/aggs/ticker/{ticker}"
+            f"/range/{multiplier}/{timespan}"
+            f"/{pd.Timestamp(start_date).strftime('%Y-%m-%d')}"
+            f"/{pd.Timestamp(end_date).strftime('%Y-%m-%d')}"
+        )
+
+        params = {
+            "adjusted": "true",
+            "sort": "asc",
+            "limit": 50000,
+        }
+
+        headers = {
+            "Authorization": (
+                f"Bearer {self.api_key}"
+            )
+        }
+
+        response = self.session.get(
+            url,
+            params=params,
+            headers=headers,
+        )
+
+        if not response.ok:
+            print("status:", response.status_code)
+            print("response:", response.text)
+
+        response.raise_for_status()
+
+        data = response.json()
+
+        return data.get(
+            "results",
+            []
+        )

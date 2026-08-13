@@ -415,3 +415,4 @@ def test_massive_http_client_follows_next_url():
     assert session.calls[1]["url"].endswith(
         "?cursor=abc123"
     )
+

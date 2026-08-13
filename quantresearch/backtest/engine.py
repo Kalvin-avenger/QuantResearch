@@ -15,6 +15,17 @@ from quantresearch.data.option_provider import (
 from quantresearch.execution.option_quote_protocol import (
     ExecutableOptionQuote,
 )
+from quantresearch.orders.option_order_intent import (
+    OptionOrderIntent,
+)
+
+# from quantresearch.orders.option_order_builder import (
+#     OptionOrderBuilder,
+# )
+
+from quantresearch.orders.option_instruction_resolver import (
+    OptionInstructionResolver,
+)
 
 
 class BacktestEngine:
@@ -34,6 +45,9 @@ class BacktestEngine:
 
         self.executor = Executor()
         self.option_executor = OptionExecutor()
+        self.option_instruction_resolver = (
+            OptionInstructionResolver()
+        )
 
     def _calculate_buy_quantity(
         self,
@@ -154,38 +168,53 @@ class BacktestEngine:
         ):
                 if explicit_orders:
 
-                    order = instruction
+                    instruction = instruction
 
-                    if order is not None:
+                    if instruction is not None:
 
-                        if isinstance(order, OptionOrder):
+                        if isinstance(
+                            instruction,
+                            (
+                                OptionOrder,
+                                OptionOrderIntent,
+                            ),
+                        ):
 
                             if option_data_provider is None:
                                 raise ValueError(
-                                    "option_data_provider is required for option orders"
+                                    "option_data_provider is required "
+                                    "for option instructions"
                                 )
-
 
                             quote = option_data_provider.get_quote(
                                 timestamp=timestamp,
-                                contract=order.contract,
+                                contract=instruction.contract,
                             )
 
-                            self._execute_option_order(
-                                order=order,
-                                quote=quote,
-                                portfolio=portfolio,
+                            order = (
+                                self.option_instruction_resolver.resolve(
+                                    instruction=instruction,
+                                    quote=quote,
+                                    cash=portfolio.cash,
+                                )
                             )
+
+                            if order is not None:
+                                self._execute_option_order(
+                                    order=order,
+                                    quote=quote,
+                                    portfolio=portfolio,
+                                )
+
                         else:
 
                             self._execute_equity_order(
-                                order=order,
+                                order=instruction,
                                 price=price,
                                 timestamp=timestamp,
                                 portfolio=portfolio,
                                 trades=trades,
                             )
-
                 else:
                     signal = instruction
 
