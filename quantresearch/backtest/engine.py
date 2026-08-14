@@ -27,6 +27,13 @@ from quantresearch.orders.option_instruction_resolver import (
     OptionInstructionResolver,
 )
 
+from quantresearch.orders.equity_order_intent import (
+    EquityOrderIntent,
+)
+
+from quantresearch.orders.equity_instruction_resolver import (
+    EquityInstructionResolver,
+)
 
 class BacktestEngine:
     """
@@ -47,6 +54,9 @@ class BacktestEngine:
         self.option_executor = OptionExecutor()
         self.option_instruction_resolver = (
             OptionInstructionResolver()
+        )
+        self.equity_instruction_resolver = (
+            EquityInstructionResolver()
         )
 
     def _calculate_buy_quantity(
@@ -120,6 +130,52 @@ class BacktestEngine:
             execution
         )
 
+    def _get_option_mark_prices(
+        self,
+        timestamp,
+        portfolio: Portfolio,
+        option_data_provider: HistoricalOptionDataProvider | None,
+        last_option_prices: dict,
+    ) -> dict:
+
+        if not portfolio.option_positions:
+            return {}
+
+        if option_data_provider is None:
+            raise ValueError(
+                "option_data_provider is required "
+                "to value option positions"
+            )
+
+        option_prices = {}
+
+        for contract in portfolio.option_positions:
+
+            try:
+                quote = option_data_provider.get_quote(
+                    timestamp=timestamp,
+                    contract=contract,
+                )
+
+                mark_price = quote.bid
+
+                last_option_prices[contract] = (
+                    mark_price
+                )
+
+            except ValueError:
+
+                if contract not in last_option_prices:
+                    raise
+
+                mark_price = last_option_prices[
+                    contract
+                ]
+
+            option_prices[contract] = mark_price
+
+        return option_prices
+
     def run(
         self,
         prices: pd.Series,
@@ -143,6 +199,7 @@ class BacktestEngine:
 
         equity_curve = []
         trades = []
+        last_option_prices = {}
 
         if hasattr(strategy, "generate_orders"):
             instructions = strategy.generate_orders(
@@ -216,22 +273,20 @@ class BacktestEngine:
                                 trades=trades,
                             )
                 else:
-                    signal = instruction
+                    if isinstance(
+                        instruction,
+                        EquityOrderIntent,
+                    ):
 
-                    if signal == Signal.BUY:
-
-                        quantity = self._calculate_buy_quantity(
-                            portfolio=portfolio,
-                            price=price,
-                            buy_fraction=buy_fraction,
+                        order = (
+                            self.equity_instruction_resolver.resolve(
+                                instruction=instruction,
+                                price=price,
+                                cash=portfolio.cash,
+                            )
                         )
 
-                        if quantity > 0:
-
-                            order = Order(
-                                action=Signal.BUY,
-                                quantity=quantity,
-                            )
+                        if order is not None:
 
                             self._execute_equity_order(
                                 order=order,
@@ -240,20 +295,23 @@ class BacktestEngine:
                                 portfolio=portfolio,
                                 trades=trades,
                             )
-                                            
-                    elif signal == Signal.SELL:
 
-                        if portfolio.position.quantity > 0:
+                    else:
 
-                            quantity = self._calculate_sell_quantity(
+                        signal = instruction
+
+                        if signal == Signal.BUY:
+
+                            quantity = self._calculate_buy_quantity(
                                 portfolio=portfolio,
-                                sell_fraction=sell_fraction,
+                                price=price,
+                                buy_fraction=buy_fraction,
                             )
 
                             if quantity > 0:
 
                                 order = Order(
-                                    action=Signal.SELL,
+                                    action=Signal.BUY,
                                     quantity=quantity,
                                 )
 
@@ -263,10 +321,42 @@ class BacktestEngine:
                                     timestamp=timestamp,
                                     portfolio=portfolio,
                                     trades=trades,
-                                                            )
+                                )
+
+                        elif signal == Signal.SELL:
+
+                            if portfolio.position.quantity > 0:
+
+                                quantity = self._calculate_sell_quantity(
+                                    portfolio=portfolio,
+                                    sell_fraction=sell_fraction,
+                                )
+
+                                if quantity > 0:
+
+                                    order = Order(
+                                        action=Signal.SELL,
+                                        quantity=quantity,
+                                    )
+
+                                    self._execute_equity_order(
+                                        order=order,
+                                        price=price,
+                                        timestamp=timestamp,
+                                        portfolio=portfolio,
+                                        trades=trades,
+                                    )
+
+                option_prices = self._get_option_mark_prices(
+                    timestamp=timestamp,
+                    portfolio=portfolio,
+                    option_data_provider=option_data_provider,
+                    last_option_prices=last_option_prices,
+                )
 
                 equity = portfolio.total_equity(
                     price=price,
+                    option_prices=option_prices,
                 )
 
                 equity_curve.append(

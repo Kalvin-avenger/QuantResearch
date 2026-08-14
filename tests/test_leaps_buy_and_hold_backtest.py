@@ -79,18 +79,42 @@ def test_leaps_strategy_runs_end_to_end_backtest():
     )
 
     quotes = {
-        (
-            pd.Timestamp("2026-01-02"),
-            contract_3,
-        ): HistoricalOptionQuote(
-            contract=contract_3,
-            timestamp=pd.Timestamp(
-                "2026-01-02 15:59:00"
+            (
+                pd.Timestamp("2026-01-02"),
+                contract_3,
+            ): HistoricalOptionQuote(
+                contract=contract_3,
+                timestamp=pd.Timestamp(
+                    "2026-01-02 15:59:00"
+                ),
+                bid=49.0,
+                ask=51.0,
             ),
-            bid=49.0,
-            ask=51.0,
-        ),
-    }
+
+            (
+                pd.Timestamp("2026-01-05"),
+                contract_3,
+            ): HistoricalOptionQuote(
+                contract=contract_3,
+                timestamp=pd.Timestamp(
+                    "2026-01-05 15:59:00"
+                ),
+                bid=55.0,
+                ask=57.0,
+            ),
+
+            (
+                pd.Timestamp("2026-01-06"),
+                contract_3,
+            ): HistoricalOptionQuote(
+                contract=contract_3,
+                timestamp=pd.Timestamp(
+                    "2026-01-06 15:59:00"
+                ),
+                bid=59.0,
+                ask=61.0,
+            ),
+        }
 
     provider = FakeHistoricalOptionDataProvider(
         quotes=quotes

@@ -46,25 +46,26 @@ def test_buy_and_hold_option_strategy_creates_option_position():
     )
 
     quotes = {
-        pd.Timestamp("2026-01-02"):
-            HistoricalOptionQuote(
-                contract=contract,
-                timestamp=pd.Timestamp(
-                    "2026-01-02 15:59:00"
-                ),
-                bid=49.0,
-                ask=51.0,
-            ),
+        pd.Timestamp("2026-01-02"): HistoricalOptionQuote(
+            contract=contract,
+            timestamp=pd.Timestamp("2026-01-02 15:59:00"),
+            bid=49.0,
+            ask=51.0,
+        ),
 
-        pd.Timestamp("2026-01-05"):
-            HistoricalOptionQuote(
-                contract=contract,
-                timestamp=pd.Timestamp(
-                    "2026-01-05 15:59:00"
-                ),
-                bid=61.0,
-                ask=63.0,
-            ),
+        pd.Timestamp("2026-01-05"): HistoricalOptionQuote(
+            contract=contract,
+            timestamp=pd.Timestamp("2026-01-05 15:59:00"),
+            bid=61.0,
+            ask=63.0,
+        ),
+
+        pd.Timestamp("2026-01-06"): HistoricalOptionQuote(
+            contract=contract,
+            timestamp=pd.Timestamp("2026-01-06 15:59:00"),
+            bid=69.0,
+            ask=71.0,
+        ),
     }
 
     provider = FakeHistoricalOptionDataProvider(
@@ -179,6 +180,16 @@ def test_option_backtest_buy_then_sell_realizes_profit():
                 ),
                 bid=61.0,
                 ask=63.0,
+            ),
+
+        pd.Timestamp("2026-01-06"):
+            HistoricalOptionQuote(
+                contract=contract,
+                timestamp=pd.Timestamp(
+                    "2026-01-06 15:59:00"
+                ),
+                bid=69.0,
+                ask=71.0,
             ),
     }
 

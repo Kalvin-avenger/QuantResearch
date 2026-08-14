@@ -114,10 +114,15 @@ def test_engine_executes_option_order_using_historical_provider():
         option_data_provider=provider,
     )
 
-    assert len(provider.calls) == 1
+    assert len(provider.calls) == 2
 
     assert (
         provider.calls[0]["timestamp"]
+        == pd.Timestamp("2026-01-02")
+    )
+
+    assert (
+        provider.calls[1]["timestamp"]
         == pd.Timestamp("2026-01-02")
     )
 
@@ -126,4 +131,8 @@ def test_engine_executes_option_order_using_historical_provider():
         == contract
     )
 
+    assert (
+        provider.calls[1]["contract"]
+        == contract
+    )
     assert result.portfolio is portfolio

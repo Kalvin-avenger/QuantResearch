@@ -187,12 +187,12 @@ class MassiveHttpClient:
                 headers=headers,
             )
 
-            # response.raise_for_status()
-            if not response.ok:
-                print("status:", response.status_code)
-                print("response:", response.text)
-
             response.raise_for_status()
+            # if not response.ok:
+            #     print("status:", response.status_code)
+            #     print("response:", response.text)
+
+            # response.raise_for_status()
 
             data = response.json()
 
