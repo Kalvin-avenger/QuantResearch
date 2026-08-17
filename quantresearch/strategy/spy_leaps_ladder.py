@@ -3,8 +3,13 @@ from quantresearch.orders.equity_order_intent import (
 )
 from quantresearch.orders.option_order_intent import (
     OptionOrderIntent,
+ 
 )
 from quantresearch.signals import Signal
+from quantresearch.orders.option_order import (
+    OptionOrder,
+)
+
 
 
 class SpyLeapsLadderStrategy:
@@ -16,8 +21,8 @@ class SpyLeapsLadderStrategy:
         option_allocation: float = 0.25,
         drawdown_step: float = 0.05,
         initial_capital: float | None = None,
-
         max_tranches: int = 2,
+        take_profit_threshold: float = 0.25,
     ):
         self.leaps_contract = leaps_contract
         self.equity_allocation = equity_allocation
@@ -25,10 +30,13 @@ class SpyLeapsLadderStrategy:
         self.drawdown_step = drawdown_step
         self.initial_capital = initial_capital
 
+        self.max_tranches = max_tranches
+        self.take_profit_threshold = (
+            take_profit_threshold
+        )
+
         self.peak_price = None
         self.last_triggered_level = 0
-
-        self.max_tranches = max_tranches
         self.tranches_deployed = 0
 
     def generate_initial_instructions(self):
@@ -166,3 +174,110 @@ class SpyLeapsLadderStrategy:
         self.last_triggered_level = level
 
         return level
+
+    def calculate_option_return(
+        self,
+        current_bid: float,
+        average_cost: float,
+    ) -> float:
+
+        if average_cost <= 0:
+            raise ValueError(
+                "average_cost must be positive"
+            )
+
+        return (
+            current_bid / average_cost
+        ) - 1.0
+
+    def should_take_profit(
+        self,
+        current_bid: float,
+        average_cost: float,
+    ) -> bool:
+
+        option_return = (
+            self.calculate_option_return(
+                current_bid=current_bid,
+                average_cost=average_cost,
+            )
+        )
+
+        return (
+            option_return
+            >= self.take_profit_threshold
+        )
+
+    def on_bar(
+        self,
+        timestamp,
+        price: float,
+        context,
+    ):
+
+        price = float(price)
+
+        # =========================================
+        # First bar: initial tranche
+        # =========================================
+
+        if self.peak_price is None:
+
+            self.peak_price = price
+            self.last_triggered_level = 0
+            self.tranches_deployed = 1
+
+            if self.initial_capital is None:
+                self.initial_capital = context.cash
+
+            return self.generate_initial_instructions()
+
+        # =========================================
+        # LEAPS take-profit
+        # =========================================
+
+        position = context.option_positions.get(
+            self.leaps_contract
+        )
+
+        quote = context.option_quotes.get(
+            self.leaps_contract
+        )
+
+        if (
+            position is not None
+            and position.quantity > 0
+            and quote is not None
+            and self.should_take_profit(
+                current_bid=quote.bid,
+                average_cost=position.average_cost,
+            )
+        ):
+
+            return OptionOrder(
+                contract=self.leaps_contract,
+                action=Signal.SELL,
+                quantity=position.quantity,
+            )
+
+        # =========================================
+        # Drawdown ladder
+        # =========================================
+
+        triggered_level = (
+            self.update_drawdown_state(
+                price=price,
+            )
+        )
+
+        if (
+            triggered_level is not None
+            and self.tranches_deployed
+            < self.max_tranches
+        ):
+
+            self.tranches_deployed += 1
+
+            return self.generate_initial_instructions()
+
+        return None
