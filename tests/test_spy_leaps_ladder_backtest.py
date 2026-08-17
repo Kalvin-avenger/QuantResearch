@@ -310,12 +310,6 @@ def test_spy_leaps_ladder_take_profit_end_to_end():
         option_data_provider=store,
     )
 
-    option_position = (
-        portfolio.option_positions[
-            contract
-        ]
-    )
-
     assert contract not in portfolio.option_positions
 
     assert portfolio.position.quantity == 50
@@ -324,11 +318,10 @@ def test_spy_leaps_ladder_take_profit_end_to_end():
         82000.0
     )
 
-    assert option_position.realized_pnl == pytest.approx(
+    assert portfolio.realized_pnl == pytest.approx(
         7000.0
     )
 
     assert result.equity_curve[-1] == pytest.approx(
         107250.0
     )
-
