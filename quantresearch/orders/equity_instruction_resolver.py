@@ -19,8 +19,14 @@ class EquityInstructionResolver:
                 "only BUY equity intents are supported"
             )
 
+        capital_base = (
+            instruction.allocation_base
+            if instruction.allocation_base is not None
+            else cash
+        )
+
         budget = (
-            cash
+            capital_base
             * instruction.allocation_fraction
         )
 

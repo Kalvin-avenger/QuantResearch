@@ -9,3 +9,4 @@ class OptionOrderIntent:
     contract: OptionContract
     action: Signal
     allocation_fraction: float
+    allocation_base: float | None = None

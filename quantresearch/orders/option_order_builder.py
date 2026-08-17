@@ -26,8 +26,14 @@ class OptionOrderBuilder:
         else:
             option_price = quote.bid
 
+        capital_base = (
+            intent.allocation_base
+            if intent.allocation_base is not None
+            else cash
+        )
+
         quantity = calculate_option_quantity(
-            cash=cash,
+            cash=capital_base,
             option_price=option_price,
             multiplier=intent.contract.multiplier,
             allocation_fraction=intent.allocation_fraction,

@@ -6,23 +6,13 @@ from quantresearch.orders import Order
 from quantresearch.portfolio import Portfolio
 from quantresearch.signals import Signal
 from quantresearch.backtest import BacktestResult
-from quantresearch.orders.option_order import OptionOrder
-from quantresearch.execution.option_execution import OptionExecutor
-from quantresearch.data.options import OptionQuote
-from quantresearch.data.option_provider import (
-    HistoricalOptionDataProvider,
-)
-from quantresearch.execution.option_quote_protocol import (
-    ExecutableOptionQuote,
+
+from quantresearch.orders.option_order import (
+    OptionOrder,
 )
 from quantresearch.orders.option_order_intent import (
     OptionOrderIntent,
 )
-
-# from quantresearch.orders.option_order_builder import (
-#     OptionOrderBuilder,
-# )
-
 from quantresearch.orders.option_instruction_resolver import (
     OptionInstructionResolver,
 )
@@ -30,10 +20,21 @@ from quantresearch.orders.option_instruction_resolver import (
 from quantresearch.orders.equity_order_intent import (
     EquityOrderIntent,
 )
-
 from quantresearch.orders.equity_instruction_resolver import (
     EquityInstructionResolver,
 )
+
+from quantresearch.execution.option_execution import (
+    OptionExecutor,
+)
+from quantresearch.execution.option_quote_protocol import (
+    ExecutableOptionQuote,
+)
+
+from quantresearch.data.option_provider import (
+    HistoricalOptionDataProvider,
+)
+
 
 class BacktestEngine:
     """
@@ -41,7 +42,7 @@ class BacktestEngine:
 
     Assumptions
     -----------
-    - Single asset
+    - Single equity asset
     - Long only
     - Market execution
     - No commission
@@ -51,10 +52,13 @@ class BacktestEngine:
     def __init__(self):
 
         self.executor = Executor()
+
         self.option_executor = OptionExecutor()
+
         self.option_instruction_resolver = (
             OptionInstructionResolver()
         )
+
         self.equity_instruction_resolver = (
             EquityInstructionResolver()
         )
@@ -65,6 +69,7 @@ class BacktestEngine:
         price: float,
         buy_fraction: float,
     ) -> int:
+
         available_cash = (
             portfolio.cash
             * buy_fraction
@@ -74,12 +79,12 @@ class BacktestEngine:
             available_cash // price
         )
 
-
     def _calculate_sell_quantity(
         self,
         portfolio: Portfolio,
         sell_fraction: float,
     ) -> int:
+
         return int(
             portfolio.position.quantity
             * sell_fraction
@@ -134,7 +139,10 @@ class BacktestEngine:
         self,
         timestamp,
         portfolio: Portfolio,
-        option_data_provider: HistoricalOptionDataProvider | None,
+        option_data_provider: (
+            HistoricalOptionDataProvider
+            | None
+        ),
         last_option_prices: dict,
     ) -> dict:
 
@@ -152,29 +160,124 @@ class BacktestEngine:
         for contract in portfolio.option_positions:
 
             try:
-                quote = option_data_provider.get_quote(
-                    timestamp=timestamp,
-                    contract=contract,
+
+                quote = (
+                    option_data_provider.get_quote(
+                        timestamp=timestamp,
+                        contract=contract,
+                    )
                 )
 
                 mark_price = quote.bid
 
-                last_option_prices[contract] = (
-                    mark_price
-                )
+                last_option_prices[
+                    contract
+                ] = mark_price
 
             except ValueError:
 
                 if contract not in last_option_prices:
                     raise
 
-                mark_price = last_option_prices[
-                    contract
-                ]
+                mark_price = (
+                    last_option_prices[
+                        contract
+                    ]
+                )
 
-            option_prices[contract] = mark_price
+            option_prices[
+                contract
+            ] = mark_price
 
         return option_prices
+
+    def _execute_explicit_instruction(
+        self,
+        instruction,
+        price: float,
+        timestamp,
+        portfolio: Portfolio,
+        trades: list,
+        option_data_provider,
+        allocation_cash: float,
+    ) -> None:
+
+        if isinstance(
+            instruction,
+            (
+                OptionOrder,
+                OptionOrderIntent,
+            ),
+        ):
+
+            if option_data_provider is None:
+                raise ValueError(
+                    "option_data_provider is required "
+                    "for option instructions"
+                )
+
+            quote = option_data_provider.get_quote(
+                timestamp=timestamp,
+                contract=instruction.contract,
+            )
+
+            order = (
+                self.option_instruction_resolver.resolve(
+                    instruction=instruction,
+                    quote=quote,
+                    cash=allocation_cash,
+                )
+            )
+
+            if order is not None:
+                self._execute_option_order(
+                    order=order,
+                    quote=quote,
+                    portfolio=portfolio,
+                )
+
+        elif isinstance(
+            instruction,
+            EquityOrderIntent,
+        ):
+
+            order = (
+                self.equity_instruction_resolver.resolve(
+                    instruction=instruction,
+                    price=price,
+                    cash=allocation_cash,
+                )
+            )
+
+            if order is not None:
+                self._execute_equity_order(
+                    order=order,
+                    price=price,
+                    timestamp=timestamp,
+                    portfolio=portfolio,
+                    trades=trades,
+                )
+
+        elif isinstance(
+            instruction,
+            Order,
+        ):
+
+            self._execute_equity_order(
+                order=instruction,
+                price=price,
+                timestamp=timestamp,
+                portfolio=portfolio,
+                trades=trades,
+            )
+
+        else:
+
+            raise TypeError(
+                "unsupported explicit "
+                "instruction type: "
+                f"{type(instruction)}"
+            )
 
     def run(
         self,
@@ -183,110 +286,168 @@ class BacktestEngine:
         portfolio: Portfolio,
         buy_fraction: float = 1.0,
         sell_fraction: float = 1.0,
-        option_data_provider: HistoricalOptionDataProvider | None = None,
+        option_data_provider: (
+            HistoricalOptionDataProvider
+            | None
+        ) = None,
     ) -> BacktestResult:
 
         if not 0 < buy_fraction <= 1:
             raise ValueError(
-                "buy_fraction must be greater than 0 and at most 1"
+                "buy_fraction must be greater "
+                "than 0 and at most 1"
             )
 
         if not 0 < sell_fraction <= 1:
             raise ValueError(
-                "sell_fraction must be greater than 0 and at most 1"
+                "sell_fraction must be greater "
+                "than 0 and at most 1"
             )
-
 
         equity_curve = []
         trades = []
+
         last_option_prices = {}
 
-        if hasattr(strategy, "generate_orders"):
-            instructions = strategy.generate_orders(
-                prices
+        # -------------------------------------------------
+        # Strategy output
+        # -------------------------------------------------
+
+        if hasattr(
+            strategy,
+            "generate_orders",
+        ):
+
+            instructions = (
+                strategy.generate_orders(
+                    prices
+                )
             )
+
             explicit_orders = True
+
         else:
+
             instructions = strategy.generate(
                 prices
             )
+
             explicit_orders = False
 
         if len(instructions) != len(prices):
+
             raise ValueError(
-                "strategy output length must match price series length"
+                "strategy output length must "
+                "match price series length"
             )
 
+        # -------------------------------------------------
+        # Main backtest loop
+        # -------------------------------------------------
 
-        for timestamp, instruction, price in zip(
+        for (
+            timestamp,
+            instruction,
+            price,
+        ) in zip(
             prices.index,
             instructions,
             prices,
         ):
-                if explicit_orders:
+            daily_cash_snapshot = portfolio.cash
 
-                    instruction = instruction
+            # =============================================
+            # Explicit order / intent path
+            # =============================================
 
-                    if instruction is not None:
+            if explicit_orders:
 
-                        if isinstance(
-                            instruction,
-                            (
-                                OptionOrder,
-                                OptionOrderIntent,
-                            ),
-                        ):
+                if instruction is not None:
 
-                            if option_data_provider is None:
-                                raise ValueError(
-                                    "option_data_provider is required "
-                                    "for option instructions"
-                                )
-
-                            quote = option_data_provider.get_quote(
-                                timestamp=timestamp,
-                                contract=instruction.contract,
-                            )
-
-                            order = (
-                                self.option_instruction_resolver.resolve(
-                                    instruction=instruction,
-                                    quote=quote,
-                                    cash=portfolio.cash,
-                                )
-                            )
-
-                            if order is not None:
-                                self._execute_option_order(
-                                    order=order,
-                                    quote=quote,
-                                    portfolio=portfolio,
-                                )
-
-                        else:
-
-                            self._execute_equity_order(
-                                order=instruction,
-                                price=price,
-                                timestamp=timestamp,
-                                portfolio=portfolio,
-                                trades=trades,
-                            )
-                else:
                     if isinstance(
                         instruction,
-                        EquityOrderIntent,
+                        (list, tuple),
                     ):
 
-                        order = (
-                            self.equity_instruction_resolver.resolve(
-                                instruction=instruction,
-                                price=price,
-                                cash=portfolio.cash,
+                        daily_instructions = instruction
+
+                    else:
+
+                        daily_instructions = [
+                            instruction
+                        ]
+
+                    for daily_instruction in daily_instructions:
+
+                        self._execute_explicit_instruction(
+                            instruction=daily_instruction,
+                            price=price,
+                            timestamp=timestamp,
+                            portfolio=portfolio,
+                            trades=trades,
+                            option_data_provider=(
+                                option_data_provider
+                            ),
+                            allocation_cash=(
+                                daily_cash_snapshot
+                            ),
+                        )
+
+            # =============================================
+            # Legacy Signal path
+            # =============================================
+
+            else:
+
+                signal = instruction
+
+                if signal == Signal.BUY:
+
+                    quantity = (
+                        self._calculate_buy_quantity(
+                            portfolio=portfolio,
+                            price=price,
+                            buy_fraction=buy_fraction,
+                        )
+                    )
+
+                    if quantity > 0:
+
+                        order = Order(
+                            action=Signal.BUY,
+                            quantity=quantity,
+                        )
+
+                        self._execute_equity_order(
+                            order=order,
+                            price=price,
+                            timestamp=timestamp,
+                            portfolio=portfolio,
+                            trades=trades,
+                        )
+
+                elif signal == Signal.SELL:
+
+                    if (
+                        portfolio.position.quantity
+                        > 0
+                    ):
+
+                        quantity = (
+                            self._calculate_sell_quantity(
+                                portfolio=portfolio,
+                                sell_fraction=(
+                                    sell_fraction
+                                ),
                             )
                         )
 
-                        if order is not None:
+                        if quantity > 0:
+
+                            order = Order(
+                                action=Signal.SELL,
+                                quantity=quantity,
+                            )
 
                             self._execute_equity_order(
                                 order=order,
@@ -296,72 +457,35 @@ class BacktestEngine:
                                 trades=trades,
                             )
 
-                    else:
+            # =============================================
+            # End-of-day option mark-to-market
+            # =============================================
 
-                        signal = instruction
-
-                        if signal == Signal.BUY:
-
-                            quantity = self._calculate_buy_quantity(
-                                portfolio=portfolio,
-                                price=price,
-                                buy_fraction=buy_fraction,
-                            )
-
-                            if quantity > 0:
-
-                                order = Order(
-                                    action=Signal.BUY,
-                                    quantity=quantity,
-                                )
-
-                                self._execute_equity_order(
-                                    order=order,
-                                    price=price,
-                                    timestamp=timestamp,
-                                    portfolio=portfolio,
-                                    trades=trades,
-                                )
-
-                        elif signal == Signal.SELL:
-
-                            if portfolio.position.quantity > 0:
-
-                                quantity = self._calculate_sell_quantity(
-                                    portfolio=portfolio,
-                                    sell_fraction=sell_fraction,
-                                )
-
-                                if quantity > 0:
-
-                                    order = Order(
-                                        action=Signal.SELL,
-                                        quantity=quantity,
-                                    )
-
-                                    self._execute_equity_order(
-                                        order=order,
-                                        price=price,
-                                        timestamp=timestamp,
-                                        portfolio=portfolio,
-                                        trades=trades,
-                                    )
-
-                option_prices = self._get_option_mark_prices(
+            option_prices = (
+                self._get_option_mark_prices(
                     timestamp=timestamp,
                     portfolio=portfolio,
-                    option_data_provider=option_data_provider,
-                    last_option_prices=last_option_prices,
+                    option_data_provider=(
+                        option_data_provider
+                    ),
+                    last_option_prices=(
+                        last_option_prices
+                    ),
                 )
+            )
 
-                equity = portfolio.total_equity(
-                    price=price,
-                    option_prices=option_prices,
-                )
+            equity = portfolio.total_equity(
+                price=price,
+                option_prices=option_prices,
+            )
 
-                equity_curve.append(
-                    equity
-                )
+            equity_curve.append(
+                equity
+            )
+
+        # -------------------------------------------------
+        # Result
+        # -------------------------------------------------
 
         return BacktestResult(
             equity_curve=equity_curve,

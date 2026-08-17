@@ -7,3 +7,4 @@ from quantresearch.signals import Signal
 class EquityOrderIntent:
     action: Signal
     allocation_fraction: float
+    allocation_base: float | None = None

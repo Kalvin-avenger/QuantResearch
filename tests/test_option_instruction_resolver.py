@@ -81,3 +81,39 @@ def test_resolver_returns_existing_option_order():
     )
 
     assert result is existing_order
+
+def test_option_intent_can_use_fixed_allocation_base():
+
+    contract = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2027-12-17"),
+        strike=500.0,
+        option_type=OptionType.CALL,
+    )
+
+    quote = HistoricalOptionQuote(
+        contract=contract,
+        timestamp=pd.Timestamp("2026-01-02 15:59:00"),
+        bid=24.0,
+        ask=25.0,
+    )
+
+    resolver = OptionInstructionResolver()
+
+    intent = OptionOrderIntent(
+        contract=contract,
+        action=Signal.BUY,
+        allocation_fraction=0.25,
+        allocation_base=100000.0,
+    )
+
+    order = resolver.resolve(
+        instruction=intent,
+        quote=quote,
+        cash=50000.0,
+    )
+
+    assert order is not None
+    assert order.contract == contract
+    assert order.action == Signal.BUY
+    assert order.quantity == 10
