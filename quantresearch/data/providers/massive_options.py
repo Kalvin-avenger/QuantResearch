@@ -12,6 +12,10 @@ from quantresearch.data.historical_options import (
     HistoricalOptionQuoteStore,
 )
 
+from quantresearch.data.option_contract_universe_provider import (
+    OptionContractUniverseProvider
+)
+
 
 def normalize_massive_option_quote(
     raw_quote: dict,
@@ -78,7 +82,64 @@ def format_massive_option_ticker(
         f"{strike_code}"
     )
 
+def normalize_massive_option_contract(
+    raw_contract: dict,
+) -> OptionContract:
 
+    required_fields = {
+        "underlying_ticker",
+        "expiration_date",
+        "strike_price",
+        "contract_type",
+    }
+
+    missing_fields = (
+        required_fields
+        - set(raw_contract)
+    )
+
+    if missing_fields:
+        raise ValueError(
+            "missing required field(s): "
+            + ", ".join(
+                sorted(
+                    missing_fields
+                )
+            )
+        )
+
+    contract_type = raw_contract[
+        "contract_type"
+    ].lower()
+
+    if contract_type == "call":
+        option_type = OptionType.CALL
+
+    elif contract_type == "put":
+        option_type = OptionType.PUT
+
+    else:
+        raise ValueError(
+            "unsupported contract_type: "
+            f"{contract_type}"
+        )
+
+    return OptionContract(
+        underlying=raw_contract[
+            "underlying_ticker"
+        ],
+        expiration=pd.Timestamp(
+            raw_contract[
+                "expiration_date"
+            ]
+        ),
+        strike=float(
+            raw_contract[
+                "strike_price"
+            ]
+        ),
+        option_type=option_type,
+    )
 
 class MassiveHistoricalOptionDataProvider:
 
@@ -258,3 +319,94 @@ class MassiveHttpClient:
             "results",
             []
         )
+
+    def get_option_contracts(
+        self,
+        underlying_ticker: str,
+        as_of,
+    ) -> list[dict]:
+
+        url = (
+            f"{self.BASE_URL}"
+            f"/v3/reference/options/contracts"
+        )
+
+        params = {
+            "underlying_ticker": underlying_ticker,
+            "as_of": pd.Timestamp(
+                as_of
+            ).strftime("%Y-%m-%d"),
+            "contract_type": "call",
+            "expired": "true",
+            "order": "asc",
+            "sort": "expiration_date",
+            "limit": 1000,
+        }
+
+        headers = {
+            "Authorization": (
+                f"Bearer {self.api_key}"
+            )
+        }
+
+        contracts = []
+
+        while url is not None:
+
+            response = self.session.get(
+                url,
+                params=params,
+                headers=headers,
+            )
+
+            if not response.ok:
+                response.raise_for_status()
+
+            data = response.json()
+
+            contracts.extend(
+                data.get(
+                    "results",
+                    [],
+                )
+            )
+
+            url = data.get(
+                "next_url"
+            )
+
+            params = None
+
+        return contracts
+
+    
+class MassiveOptionContractUniverseProvider(
+    OptionContractUniverseProvider
+):
+
+    def __init__(
+        self,
+        client,
+        underlying: str,
+    ):
+        self.client = client
+        self.underlying = underlying
+
+    def get_contracts(
+        self,
+        timestamp,
+    ):
+
+        raw_contracts = (
+            self.client.get_option_contracts(
+                underlying_ticker=self.underlying,
+                as_of=timestamp,
+            )
+        )
+
+        return [
+            normalize_massive_option_contract(
+                raw_contract
+            )
+            for raw_contract in raw_contracts
+        ]

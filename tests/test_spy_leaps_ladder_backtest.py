@@ -240,7 +240,7 @@ def test_spy_leaps_ladder_dynamic_drawdown_end_to_end():
         300.0
     )
 
-    assert strategy.tranches_deployed == 2
+    assert strategy.active_option_tranches == 2
 
 
 def test_spy_leaps_ladder_take_profit_end_to_end():
