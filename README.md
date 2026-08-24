@@ -1,104 +1,123 @@
 # QuantResearch
 
-QuantResearch is a test-driven Python backtesting framework for systematic equity and options strategy research.
+QuantResearch is a test-driven Python backtesting framework for
+systematic equity and listed-option strategy research.
 
 ## Current Development Status
 
-**Checkpoint:** 2026-08-17  
-**Current phase:** Sprint 14.3 complete  
-**Test status:** 257 tests passed, 0 failed at this checkpoint.
+The framework supports equity and option backtesting, runtime
+portfolio-aware strategies, historical option data, and dynamic
+multi-contract LEAPS lifecycle management.
 
 ### Current capabilities
 
 - Equity price data loading and validation
-- Moving-average and explicit-order strategy interfaces
-- Dynamic runtime strategies via `on_bar(timestamp, price, context)`
-- Equity order intents and position sizing
-- Order/execution modeling with slippage support
+- Signal, explicit-order, and runtime strategy interfaces
+- Equity and option order intents
+- Slippage-aware execution
 - Portfolio and position accounting
 - Performance and trade analytics
-- Option contract modeling and option quote storage
+- Historical option quote storage
 - Yahoo option-chain ingestion and normalization
-- Massive historical option-data provider integration
-- Option order intents, builders, resolvers, and execution
+- Massive historical option-data integration
+- Option contract universe discovery
+- Dynamic LEAPS contract resolution
+- DTE and nearest-ATM contract selection
 - Option position accounting:
   - weighted-average cost
   - unrealized PnL
   - realized PnL
   - partial exits
   - full exits and position cleanup
-- Option mark-to-market using bid prices with last-known-price fallback
-- Multiple instructions on the same trading day
+- Multiple instructions and orders on the same trading day
 - Same-day allocation cash snapshots
-- Fixed `allocation_base` sizing for strategy tranches
-- SPY + LEAPS ladder strategy:
-  - initial SPY + LEAPS allocation
-  - peak tracking
-  - configurable drawdown steps
-  - one-time drawdown-level triggers
-  - maximum tranche control
-  - runtime `StrategyContext`
-  - LEAPS take-profit based on current bid versus average cost
-  - end-to-end take-profit execution and realized PnL
+- Fixed allocation-base sizing
 
 ## Strategy Interfaces
 
-The engine currently supports three strategy styles:
+The engine supports three strategy styles:
 
 1. `generate(prices)` — legacy signal-based strategies.
 2. `generate_orders(prices)` — pre-generated explicit orders/intents.
-3. `on_bar(timestamp, price, context)` — runtime strategies that require current portfolio state or option quotes.
+3. `on_bar(timestamp, price, context)` — runtime strategies that
+   require current portfolio state or option quotes.
 
-The runtime path is used by `SpyLeapsLadderStrategy`.
+Runtime strategies may return no action, a single action, or multiple
+actions on the same bar.
 
-## SPY + LEAPS Strategy Status
+## SPY + LEAPS Ladder
 
 The current research implementation supports:
 
-- Initial tranche: configurable SPY allocation + LEAPS allocation.
-- Fixed tranche sizing against `initial_capital` / `allocation_base`.
-- Drawdown levels measured from the running SPY peak.
-- Configurable drawdown interval (default research setting: 5%).
-- Maximum number of deployed tranches.
-- LEAPS take-profit threshold (default research setting: 25%).
-- Option exits at the executable bid.
-- Realized option PnL retained at the portfolio level after a fully closed option position is removed.
+- Initial SPY + LEAPS deployment
+- Running SPY peak tracking
+- Configurable drawdown ladder
+- Independent equity and option tranche state
+- LEAPS take-profit
+- Option capital recycling
+- Tranche lifecycle bookkeeping
+- Historical dynamic LEAPS contract selection
+- Configurable DTE targeting
+- Nearest-ATM strike selection
+- Massive-backed historical contract universes
+- Contract rotation across recycling cycles
+- Multiple simultaneous LEAPS contracts
+- Contract-aware take-profit
+- Same-bar multi-contract option exits
 
-The next design problem is **capital recycling and independent equity/option tranche state** after a LEAPS take-profit.
+Dynamic option deployment follows:
+
+    timestamp + SPY price
+            ↓
+    historical option universe
+            ↓
+    DTE filtering
+            ↓
+    target expiration
+            ↓
+    nearest ATM strike
+            ↓
+    OptionContract
+            ↓
+    tranche lifecycle
+
+The current dynamic lifecycle has been validated end-to-end through
+`SpyLeapsLadderStrategy`, `BacktestEngine`, option execution, portfolio
+accounting, and multi-contract take-profit.
 
 ## Documentation
 
-- [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — development model and component overview.
-- [`docs/DEVELOPMENT_PROGRESS.md`](docs/DEVELOPMENT_PROGRESS.md) — sprint/checkpoint history.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — current architecture and Mermaid flow diagrams.
-- [`docs/ROADMAP.md`](docs/ROADMAP.md) — planned work from Sprint 14.4 onward.
+- `docs/DEVELOPMENT.md` — development model and component overview.
+- `docs/DEVELOPMENT_PROGRESS.md` — sprint/checkpoint history.
+- `docs/ARCHITECTURE.md` — current architecture and Mermaid diagrams.
+- `docs/ROADMAP.md` — planned development work.
 
 ## Testing
 
 Run the complete suite:
 
-```bash
-pytest tests
-```
+    pytest tests
 
 Useful focused suites:
 
-```bash
-pytest tests/test_spy_leaps_ladder.py -v
-pytest tests/test_spy_leaps_ladder_backtest.py -v
-pytest tests/test_backtest_engine_dynamic_strategy.py -v
-pytest tests/test_option_instruction_resolver.py -v
-```
+    pytest tests/test_spy_leaps_ladder.py -v
+    pytest tests/test_spy_leaps_ladder_dynamic_contract.py -v
+    pytest tests/test_spy_leaps_ladder_backtest.py -v
+    pytest tests/test_backtest_engine_dynamic_strategy.py -v
+    pytest tests/test_massive_option_contracts.py -v
 
 ## Development Principles
 
-- TDD first: reproduce behavior with a failing test before changing production logic.
-- Preserve backward compatibility unless a deliberate contract change is documented.
-- Keep strategy decisions separate from execution/accounting.
-- Use executable option prices: ask for buys, bid for sells/valuation where applicable.
-- Avoid hidden leverage; capital constraints should be explicit.
-- Keep historical realized PnL at the portfolio/accounting layer even when zero-quantity positions are removed.
+- TDD first.
+- Preserve backward compatibility unless deliberately changing a contract.
+- Keep strategy decisions separate from execution and accounting.
+- Use executable option prices: ask for buys and bid for sells.
+- Avoid hidden leverage.
+- Keep realized PnL in the portfolio/accounting layer.
+- Treat tranche lifecycle state and aggregated portfolio positions as
+  separate concepts.
 
 ## Disclaimer
 
-This repository is for research and educational purposes. It is not investment advice and is not a production trading system.
+This repository is for research and educational purposes. It is not
+investment advice and is not a production trading system.

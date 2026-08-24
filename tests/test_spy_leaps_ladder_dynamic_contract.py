@@ -38,6 +38,25 @@ from quantresearch.orders.option_order import (
 
 from quantresearch.signals import Signal
 
+from quantresearch.backtest.engine import (
+    BacktestEngine,
+)
+
+from quantresearch.portfolio import (
+    Portfolio,
+)
+
+from quantresearch.data.historical_option_quote import (
+    HistoricalOptionQuote,
+)
+
+from quantresearch.data.historical_options import (
+    HistoricalOptionQuoteStore,
+)
+
+
+
+
 def assert_single_option_sell(
     result,
 ):
@@ -898,3 +917,226 @@ def test_on_bar_returns_multiple_take_profit_orders():
     assert tranche_b.option_closed is True
 
     assert strategy.active_option_tranches == 0
+
+def test_spy_leaps_ladder_multi_contract_take_profit_end_to_end():
+
+    contract_a = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2027-04-16"),
+        strike=500.0,
+        option_type=OptionType.CALL,
+    )
+
+    contract_b = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2027-06-18"),
+        strike=475.0,
+        option_type=OptionType.CALL,
+    )
+
+    # =====================================================
+    # Resolver:
+    #
+    # Initial deployment -> Contract A
+    # First drawdown      -> Contract B
+    # =====================================================
+
+    class RotatingResolver:
+
+        def resolve(
+            self,
+            timestamp,
+            underlying_price: float,
+        ):
+
+            timestamp = pd.Timestamp(
+                timestamp
+            )
+
+            if timestamp == pd.Timestamp(
+                "2026-01-02"
+            ):
+                return contract_a
+
+            return contract_b
+
+    strategy = SpyLeapsLadderStrategy(
+        contract_resolver=RotatingResolver(),
+        initial_capital=100000.0,
+        equity_allocation=0.25,
+        option_allocation=0.25,
+        drawdown_step=0.05,
+        max_tranches=2,
+        take_profit_threshold=0.25,
+    )
+
+    # =====================================================
+    # SPY path
+    #
+    # Day 1: 500
+    #        initial tranche -> A
+    #
+    # Day 2: 475
+    #        -5% drawdown
+    #        second tranche -> B
+    #
+    # Day 3: 480
+    #        both A and B exceed TP threshold
+    # =====================================================
+
+    prices = pd.Series(
+        [
+            500.0,
+            475.0,
+            480.0,
+        ],
+        index=[
+            pd.Timestamp("2026-01-02"),
+            pd.Timestamp("2026-01-05"),
+            pd.Timestamp("2026-01-06"),
+        ],
+    )
+
+    # =====================================================
+    # Option quotes
+    #
+    # Contract A:
+    # Day 1 BUY at ask=25
+    # Day 2 bid below TP
+    # Day 3 bid=32 => +28%
+    #
+    # Contract B:
+    # Day 2 BUY at ask=20
+    # Day 3 bid=26 => +30%
+    # =====================================================
+
+    quotes = [
+        HistoricalOptionQuote(
+            contract=contract_a,
+            timestamp=pd.Timestamp(
+                "2026-01-02 15:59:00"
+            ),
+            bid=24.0,
+            ask=25.0,
+        ),
+
+        HistoricalOptionQuote(
+            contract=contract_a,
+            timestamp=pd.Timestamp(
+                "2026-01-05 15:59:00"
+            ),
+            bid=24.0,
+            ask=25.0,
+        ),
+
+        HistoricalOptionQuote(
+            contract=contract_a,
+            timestamp=pd.Timestamp(
+                "2026-01-06 15:59:00"
+            ),
+            bid=32.0,
+            ask=33.0,
+        ),
+
+        HistoricalOptionQuote(
+            contract=contract_b,
+            timestamp=pd.Timestamp(
+                "2026-01-05 15:59:00"
+            ),
+            bid=19.0,
+            ask=20.0,
+        ),
+
+        HistoricalOptionQuote(
+            contract=contract_b,
+            timestamp=pd.Timestamp(
+                "2026-01-06 15:59:00"
+            ),
+            bid=26.0,
+            ask=27.0,
+        ),
+    ]
+
+    option_store = (
+        HistoricalOptionQuoteStore
+        .from_historical_quotes(
+            quotes
+        )
+    )
+
+    portfolio = Portfolio(
+        initial_cash=100000.0,
+    )
+
+    engine = BacktestEngine()
+
+    # =====================================================
+    # Run real strategy through real engine
+    # =====================================================
+
+    result = engine.run(
+        prices=prices,
+        strategy=strategy,
+        portfolio=portfolio,
+        option_data_provider=option_store,
+    )
+
+    # =====================================================
+    # Lifecycle ledger
+    # =====================================================
+
+    assert len(strategy.tranches) == 2
+
+    tranche_a = strategy.tranches[0]
+    tranche_b = strategy.tranches[1]
+
+    assert (
+        tranche_a.option_contract
+        == contract_a
+    )
+
+    assert (
+        tranche_b.option_contract
+        == contract_b
+    )
+
+    # Both take-profit orders were generated
+    # and lifecycle state was closed.
+
+    assert tranche_a.option_deployed is False
+    assert tranche_a.option_closed is True
+
+    assert tranche_b.option_deployed is False
+    assert tranche_b.option_closed is True
+
+    assert (
+        strategy.active_option_tranches
+        == 0
+    )
+
+    # =====================================================
+    # Portfolio execution
+    # =====================================================
+
+    assert (
+        contract_a
+        not in portfolio.option_positions
+    )
+
+    assert (
+        contract_b
+        not in portfolio.option_positions
+    )
+
+    assert portfolio.option_positions == {}
+
+    # Equity legs remain deployed.
+
+    assert (
+        strategy.active_equity_tranches
+        == 2
+    )
+
+    # Backtest completed normally.
+
+    assert result.portfolio is portfolio

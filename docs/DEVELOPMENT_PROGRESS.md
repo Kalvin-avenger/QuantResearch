@@ -1,7 +1,7 @@
 # Development Progress
 
-**Latest checkpoint:** 2026-08-17  
-**Regression status:** 257 passed, 0 failed
+**Latest checkpoint:** 2026-08-24  
+**Regression status:** 314 passed, 0 failed
 
 ## Completed Foundation
 
@@ -133,12 +133,142 @@ The framework now supports:
 
 with both equity and option execution inside the same portfolio.
 
+## Sprint 14.4 — Capital Recycling & Tranche State Model
+
+Status: COMPLETE
+
+Introduced independent equity and option lifecycle state.
+
+Key work:
+
+- `SpyLeapsTranche` lifecycle model.
+- Independent equity and option deployment state.
+- Option-leg closure without closing SPY exposure.
+- Active equity and option tranche counts.
+- Option-capacity recycling after take-profit.
+- Repeated take-profit and recycling cycles.
+
+The tranche ledger replaced the earlier assumption that one combined
+`tranches_deployed` counter could represent the complete strategy
+state.
+
+## Sprint 15 — Dynamic LEAPS Contract Lifecycle
+
+Status: COMPLETE
+
+### 15.1–15.2 — Contract Resolution
+
+Added fixed and dynamic LEAPS contract resolution.
+
+The strategy can preserve legacy fixed-contract behavior or resolve a
+contract dynamically from timestamp and underlying price.
+
+### 15.3 — Historical Contract Universe
+
+Added the option contract universe abstraction and Massive-backed
+historical contract discovery.
+
+Key work:
+
+- `OptionContractUniverseProvider`
+- `StaticOptionContractUniverseProvider`
+- `MassiveOptionContractUniverseProvider`
+- Massive option-contract reference requests
+- pagination
+- historical `as_of` queries
+- vendor-to-domain contract normalization
+
+### 15.3F — Contract Rotation
+
+Validated that recycled option deployment can resolve to a different
+LEAPS contract from the original deployment.
+
+Each tranche stores the actual resolved contract.
+
+### 15.4 — Multi-Contract Take-Profit
+
+Take-profit decisions now use active tranche contracts rather than a
+single legacy fixed contract.
+
+Key work:
+
+- active-contract discovery
+- contract deduplication
+- aggregated-position-aware SELL generation
+- contract-specific tranche closure
+- multiple simultaneous active LEAPS contracts
+- multiple take-profit orders on the same bar
+
+### 15.4C–15.4D — Multi-Order Runtime
+
+Validated that runtime strategies can return multiple actions and that
+`BacktestEngine` executes multiple option SELL orders on the same bar.
+
+Portfolio position cleanup, cash accounting, and realized PnL were
+validated through integration tests.
+
+### 15.4E — Dynamic Lifecycle End-to-End
+
+Validated the complete lifecycle using the real
+`SpyLeapsLadderStrategy` and `BacktestEngine`:
+
+    initial dynamic Contract A
+              ↓
+         drawdown
+              ↓
+      dynamic Contract B
+              ↓
+       A + B active
+              ↓
+    simultaneous take-profit
+              ↓
+       two SELL orders
+              ↓
+       engine execution
+              ↓
+    option positions closed
+              ↓
+      SPY exposure remains
+
+Full regression suite GREEN at the Sprint 15 milestone.
+
+## Current Architectural Checkpoint
+
+The framework now supports:
+
+    historical market state
+            ↓
+    runtime strategy
+            ↓
+    dynamic option universe
+            ↓
+    LEAPS contract resolution
+            ↓
+    multi-contract tranche lifecycle
+            ↓
+    multiple runtime orders
+            ↓
+    equity + option execution
+            ↓
+    unified portfolio accounting
+
 ## Next
 
-**Sprint 14.4 — Capital Recycling & Tranche State Model**
+Sprint 16 — Historical Dynamic LEAPS Validation
 
-Primary question:
+The next objective is to connect historical contract discovery and
+historical option quotes in progressively more realistic backtests.
 
-How should the strategy represent state after LEAPS are sold for profit while the associated SPY tranche remains open?
+Initial target:
 
-Do not solve this by simply decrementing the existing combined `tranches_deployed` counter.
+    historical timestamp
+            ↓
+    Massive contract universe
+            ↓
+    DynamicLeapsContractResolver
+            ↓
+    selected SPY LEAPS contract
+            ↓
+    Massive historical quote
+            ↓
+    executable bid / ask

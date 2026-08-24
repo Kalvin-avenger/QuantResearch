@@ -73,25 +73,111 @@ Open option positions are marked using the current bid. If a quote is unavailabl
 
 ## SPY + LEAPS Ladder
 
-The current strategy is a runtime stateful strategy.
+`SpyLeapsLadderStrategy` is a stateful runtime strategy built on
+`on_bar(timestamp, price, context)`.
 
-Implemented state includes:
+The strategy separates equity and option lifecycle state through
+`SpyLeapsTranche`.
 
-- `peak_price`
-- `last_triggered_level`
-- `tranches_deployed`
-- `initial_capital`
-- configurable drawdown step
-- configurable maximum tranches
-- configurable LEAPS take-profit threshold
+Each tranche records:
 
-Drawdown thresholds include a small floating-point tolerance so exact boundaries such as -10% are not accidentally classified as -9.999...%.
+- drawdown level
+- equity deployment state
+- option deployment state
+- option closed state
+- the actual `OptionContract` associated with the option leg
 
-## Known Design Boundary
+This allows SPY exposure to remain deployed after a LEAPS position is
+closed.
 
-`tranches_deployed` currently describes combined SPY + LEAPS deployment. Once LEAPS are independently sold for profit while SPY remains open, this single counter is no longer expressive enough.
+### Dynamic LEAPS Resolution
 
-Sprint 14.4 should therefore design capital recycling before adding more behavior. Likely candidates include separate equity and option tranche state, explicit available strategy capital, or a tranche ledger.
+Option deployment is no longer restricted to a single fixed contract.
+
+The strategy supports a `LeapsContractResolver`.
+
+A fixed resolver preserves the legacy fixed-contract behavior.
+
+A dynamic resolver obtains the historical option universe for the
+current timestamp and selects a contract according to the configured
+LEAPS policy.
+
+Current selection criteria include:
+
+- CALL contracts
+- minimum DTE
+- maximum DTE
+- target DTE
+- nearest strike to the current underlying price
+
+Contract universes are supplied through
+`OptionContractUniverseProvider`.
+
+Implementations currently include:
+
+- `StaticOptionContractUniverseProvider`
+- `MassiveOptionContractUniverseProvider`
+
+### Capital Recycling
+
+Equity and option capacity are tracked independently.
+
+Closing a LEAPS position does not close the associated SPY exposure.
+Released option capacity may therefore be redeployed on a later
+drawdown trigger.
+
+A recycled option deployment may resolve to a different LEAPS
+contract.
+
+### Multi-Contract Take-Profit
+
+The tranche ledger is the strategy-level source of truth for active
+option contracts.
+
+Multiple tranches may reference the same contract, while the portfolio
+aggregates those holdings into one `OptionPosition`.
+
+Therefore:
+
+- active contracts are deduplicated before exit decisions;
+- one aggregated position generates one SELL order;
+- different active contracts may independently generate SELL orders;
+- multiple option SELL orders may be returned on the same bar.
+
+`BacktestEngine` normalizes single and multiple runtime actions and
+executes them independently.
+
+### Current Lifecycle
+
+    initial deployment
+          ↓
+    SPY + Contract A
+          ↓
+      drawdown
+          ↓
+    SPY + Contract B
+          ↓
+    A and B active
+          ↓
+    take-profit evaluation
+          ↓
+    SELL A / SELL B
+          ↓
+    option positions close
+          ↓
+    SPY legs remain deployed
+          ↓
+    option capacity can recycle
+
+## Current Design Boundary
+
+The dynamic contract lifecycle is operational and covered by
+end-to-end tests.
+
+The next development boundary is no longer tranche-state modeling.
+The next problem is validating the architecture against real
+historical contract universes and quotes over progressively longer
+backtest windows.
 
 ## Backward Compatibility Notes
 
