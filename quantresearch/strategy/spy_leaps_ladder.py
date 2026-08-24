@@ -493,6 +493,9 @@ class SpyLeapsLadderStrategy:
             if tranche.option_contract is None:
                 continue
 
+            if tranche.option_contract in contracts:
+                continue
+
             contracts.append(
                 tranche.option_contract
             )
@@ -570,52 +573,36 @@ class SpyLeapsLadderStrategy:
         price = float(price)
 
         # =========================================
-        # First bar
+        # First bar: initial deployment
         # =========================================
 
-        # if self.peak_price is None:
+        if self.peak_price is None:
 
-        #     self.peak_price = price
-        #     self.last_triggered_level = 0
+            self.peak_price = price
+            self.last_triggered_level = 0
 
-        #     if self.initial_capital is None:
-        #         self.initial_capital = context.cash
+            if self.initial_capital is None:
+                self.initial_capital = context.cash
 
-        #     contract = self.resolve_leaps_contract(
-        #         timestamp=timestamp,
-        #         underlying_price=price,
-        #     )
-
-        #     self.create_deployed_tranche(
-        #         level=0,
-        #         option_contract=contract,
-        #     )
-
-        #     return [
-        #         self.generate_equity_instruction(),
-        #         self.generate_option_instruction_for_contract(
-        #             contract=contract,
-        #         ),
-        #     ]
-
-        take_profit_orders = (
-            self.find_take_profit_orders(
-                context=context,
-            )
-        )
-
-        if take_profit_orders:
-
-            order = take_profit_orders[0]
-
-            self.close_option_contract(
-                order.contract
+            contract = self.resolve_leaps_contract(
+                timestamp=timestamp,
+                underlying_price=price,
             )
 
-            return order
+            self.create_deployed_tranche(
+                level=0,
+                option_contract=contract,
+            )
+
+            return [
+                self.generate_equity_instruction(),
+                self.generate_option_instruction_for_contract(
+                    contract=contract,
+                ),
+            ]
 
         # =========================================
-        # Update peak before any early return
+        # Update market peak before early return
         # =========================================
 
         if price > self.peak_price:
@@ -625,55 +612,24 @@ class SpyLeapsLadderStrategy:
             )
 
         # =========================================
-        # LEAPS take-profit
-        #
-        # IMPORTANT:
-        # This still uses the legacy fixed contract.
-        # Dynamic multi-contract take-profit will be
-        # handled in a later Sprint.
+        # Multi-contract LEAPS take-profit
         # =========================================
 
-        # if self.leaps_contract is not None:
-
-        #     position = context.option_positions.get(
-        #         self.leaps_contract
-        #     )
-
-        #     quote = context.option_quotes.get(
-        #         self.leaps_contract
-        #     )
-
-        #     if (
-        #         position is not None
-        #         and position.quantity > 0
-        #         and quote is not None
-        #         and self.should_take_profit(
-        #             current_bid=quote.bid,
-        #             average_cost=position.average_cost,
-        #         )
-        #     ):
-
-        #         self.close_deployed_option_legs()
-
-        #         return OptionOrder(
-        #             contract=self.leaps_contract,
-        #             action=Signal.SELL,
-        #             quantity=position.quantity,
-        #         )
-
-        take_profit_order = (
-            self.find_take_profit_order(
+        take_profit_orders = (
+            self.find_take_profit_orders(
                 context=context,
             )
         )
 
-        if take_profit_order is not None:
+        if take_profit_orders:
 
-            self.close_option_contract(
-                take_profit_order.contract
-            )
+            for order in take_profit_orders:
 
-            return take_profit_order
+                self.close_option_contract(
+                    contract=order.contract,
+                )
+
+            return take_profit_orders
 
         # =========================================
         # Drawdown ladder
@@ -689,7 +645,7 @@ class SpyLeapsLadderStrategy:
             return None
 
         # =========================================
-        # Independent capacity
+        # Independent leg capacity
         # =========================================
 
         can_deploy_equity = (
@@ -710,8 +666,6 @@ class SpyLeapsLadderStrategy:
 
         instructions = []
 
-        resolved_option_contract = None
-
         # =========================================
         # Equity leg
         # =========================================
@@ -725,6 +679,8 @@ class SpyLeapsLadderStrategy:
         # =========================================
         # Option leg
         # =========================================
+
+        resolved_option_contract = None
 
         if can_deploy_option:
 
@@ -742,7 +698,7 @@ class SpyLeapsLadderStrategy:
             )
 
         # =========================================
-        # Record lifecycle state
+        # Lifecycle ledger
         # =========================================
 
         self.create_tranche(

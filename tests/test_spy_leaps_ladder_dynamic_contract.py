@@ -38,6 +38,27 @@ from quantresearch.orders.option_order import (
 
 from quantresearch.signals import Signal
 
+def assert_single_option_sell(
+    result,
+):
+    assert isinstance(
+        result,
+        list,
+    )
+
+    assert len(result) == 1
+
+    order = result[0]
+
+    assert isinstance(
+        order,
+        OptionOrder,
+    )
+
+    assert order.action == Signal.SELL
+
+    return order
+
 def test_spy_leaps_ladder_selects_dynamic_contract_from_massive_universe():
 
     # =====================================================
@@ -615,16 +636,16 @@ def test_on_bar_takes_profit_on_dynamic_rotated_contract():
         },
     )
 
-    order = strategy.on_bar(
+    orders = strategy.on_bar(
         timestamp=pd.Timestamp("2027-01-06"),
         price=590.0,
         context=context,
     )
 
-    assert isinstance(
-        order,
-        OptionOrder,
+    order = assert_single_option_sell(
+        orders
     )
+
 
     assert order.contract == contract_b
     assert order.action == Signal.SELL
@@ -782,3 +803,98 @@ def test_find_take_profit_orders_only_returns_profitable_contracts():
 
     assert len(orders) == 1
     assert orders[0].contract == contract_a
+
+def test_on_bar_returns_multiple_take_profit_orders():
+
+    contract_a = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2027-04-16"),
+        strike=500.0,
+        option_type=OptionType.CALL,
+    )
+
+    contract_b = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2028-04-21"),
+        strike=550.0,
+        option_type=OptionType.CALL,
+    )
+
+    strategy = SpyLeapsLadderStrategy(
+        contract_resolver=FixedLeapsContractResolver(
+            contract_a
+        ),
+        initial_capital=100000.0,
+        take_profit_threshold=0.25,
+    )
+
+    strategy.peak_price = 600.0
+
+    tranche_a = strategy.create_tranche(
+        level=0,
+        deploy_equity=True,
+        deploy_option=True,
+        option_contract=contract_a,
+    )
+
+    tranche_b = strategy.create_tranche(
+        level=1,
+        deploy_equity=False,
+        deploy_option=True,
+        option_contract=contract_b,
+    )
+
+    class PositionA:
+        quantity = 2
+        average_cost = 10.0
+
+    class PositionB:
+        quantity = 3
+        average_cost = 20.0
+
+    class QuoteA:
+        bid = 13.0
+
+    class QuoteB:
+        bid = 26.0
+
+    context = StrategyContext(
+        cash=100000.0,
+        option_positions={
+            contract_a: PositionA(),
+            contract_b: PositionB(),
+        },
+        option_quotes={
+            contract_a: QuoteA(),
+            contract_b: QuoteB(),
+        },
+    )
+
+    orders = strategy.on_bar(
+        timestamp=pd.Timestamp("2027-01-06"),
+        price=590.0,
+        context=context,
+    )
+
+    assert isinstance(
+        orders,
+        list,
+    )
+
+    assert len(orders) == 2
+
+    assert orders[0].contract == contract_a
+    assert orders[1].contract == contract_b
+
+    assert all(
+        order.action == Signal.SELL
+        for order in orders
+    )
+
+    assert tranche_a.option_deployed is False
+    assert tranche_a.option_closed is True
+
+    assert tranche_b.option_deployed is False
+    assert tranche_b.option_closed is True
+
+    assert strategy.active_option_tranches == 0

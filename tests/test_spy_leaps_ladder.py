@@ -39,6 +39,27 @@ from quantresearch.strategy.leaps_contract_resolver import (
     FixedLeapsContractResolver,
 )
 
+def assert_single_option_sell(
+    result,
+):
+    assert isinstance(
+        result,
+        list,
+    )
+
+    assert len(result) == 1
+
+    order = result[0]
+
+    assert isinstance(
+        order,
+        OptionOrder,
+    )
+
+    assert order.action == Signal.SELL
+
+    return order
+
 
 
 def test_spy_leaps_ladder_initial_allocations():
@@ -717,24 +738,18 @@ def test_on_bar_generates_option_sell_at_take_profit():
         option_contract=contract,
     )
 
-    instruction = strategy.on_bar(
-        timestamp=pd.Timestamp(
-            "2026-01-05"
-        ),
+    orders = strategy.on_bar(
+        timestamp=pd.Timestamp("2026-01-05"),
         price=505.0,
         context=context,
     )
 
-    assert instruction is not None
-
-    assert isinstance(
-        instruction,
-        OptionOrder,
+    order = assert_single_option_sell(
+        orders
     )
 
-    assert instruction.contract == contract
-    assert instruction.action == Signal.SELL
-    assert instruction.quantity == 10
+    assert order.contract == contract
+    assert order.quantity == 10
 
     # Take-profit closes the matching
     # option lifecycle state.
@@ -899,18 +914,16 @@ def test_take_profit_closes_option_leg_for_all_deployed_tranches():
         contract: FakeQuote(),
     }
 
-    order = strategy.on_bar(
+    orders = strategy.on_bar(
         timestamp=pd.Timestamp("2026-01-04"),
         price=480.0,
         context=context,
     )
 
-    assert isinstance(
-        order,
-        OptionOrder,
+    order = assert_single_option_sell(
+        orders
     )
 
-    assert order.action == Signal.SELL
     assert order.quantity == 4
 
     assert strategy.tranches[0].equity_deployed is True
@@ -1130,15 +1143,14 @@ def test_deeper_drawdown_recycles_option_only_after_take_profit():
         contract: FakeQuote(),
     }
 
-    sell_order = strategy.on_bar(
+    sell_orders = strategy.on_bar(
         timestamp=pd.Timestamp("2026-01-04"),
         price=480.0,
         context=context,
     )
 
-    assert isinstance(
-        sell_order,
-        OptionOrder,
+    sell_order = assert_single_option_sell(
+        sell_orders
     )
 
     assert strategy.active_equity_tranches == 2
@@ -1273,18 +1285,22 @@ def test_take_profit_bar_updates_new_peak():
         contract: FakeQuote(),
     }
 
-    order = strategy.on_bar(
+    orders = strategy.on_bar(
         timestamp=pd.Timestamp("2026-01-03"),
         price=550.0,
         context=context,
     )
 
-    assert isinstance(
-        order,
-        OptionOrder,
+    order = assert_single_option_sell(
+        orders
     )
 
-    assert order.action == Signal.SELL
+    # assert isinstance(
+    #     order,
+    #     OptionOrder,
+    # )
+
+    # assert order.action == Signal.SELL
 
     # Market state must still advance even though
     # the strategy returned a take-profit order.
@@ -1363,15 +1379,14 @@ def test_multiple_take_profit_and_recycling_cycles():
         ),
     }
 
-    first_sell = strategy.on_bar(
+    first_sell_orders = strategy.on_bar(
         timestamp=pd.Timestamp("2026-01-03"),
         price=550.0,
         context=context,
     )
 
-    assert isinstance(
-        first_sell,
-        OptionOrder,
+    first_sell = assert_single_option_sell(
+        first_sell_orders
     )
 
     assert first_sell.action == Signal.SELL
@@ -1431,15 +1446,14 @@ def test_multiple_take_profit_and_recycling_cycles():
         ),
     }
 
-    second_sell = strategy.on_bar(
+    second_sell_orders = strategy.on_bar(
         timestamp=pd.Timestamp("2026-01-05"),
         price=520.0,
         context=context,
     )
 
-    assert isinstance(
-        second_sell,
-        OptionOrder,
+    second_sell = assert_single_option_sell(
+        second_sell_orders
     )
 
     assert second_sell.action == Signal.SELL
@@ -1750,3 +1764,94 @@ def test_runtime_deployment_resolves_contract_once():
     )
 
     assert len(calls) == 1
+
+def test_get_active_option_contracts_deduplicates_same_contract():
+
+    contract = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2027-12-17"),
+        strike=500.0,
+        option_type=OptionType.CALL,
+    )
+
+    strategy = SpyLeapsLadderStrategy(
+        leaps_contract=contract,
+    )
+
+    strategy.create_tranche(
+        level=0,
+        deploy_equity=True,
+        deploy_option=True,
+        option_contract=contract,
+    )
+
+    strategy.create_tranche(
+        level=1,
+        deploy_equity=True,
+        deploy_option=True,
+        option_contract=contract,
+    )
+
+    contracts = (
+        strategy.get_active_option_contracts()
+    )
+
+    assert contracts == [
+        contract
+    ]
+
+def test_same_contract_across_multiple_tranches_generates_one_sell_order():
+
+    contract = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2027-12-17"),
+        strike=500.0,
+        option_type=OptionType.CALL,
+    )
+
+    strategy = SpyLeapsLadderStrategy(
+        leaps_contract=contract,
+        take_profit_threshold=0.25,
+    )
+
+    strategy.create_tranche(
+        level=0,
+        deploy_equity=True,
+        deploy_option=True,
+        option_contract=contract,
+    )
+
+    strategy.create_tranche(
+        level=1,
+        deploy_equity=True,
+        deploy_option=True,
+        option_contract=contract,
+    )
+
+    class FakePosition:
+        quantity = 4
+        average_cost = 10.0
+
+    class FakeQuote:
+        bid = 13.0
+
+    context = StrategyContext(
+        cash=100000.0,
+        option_positions={
+            contract: FakePosition(),
+        },
+        option_quotes={
+            contract: FakeQuote(),
+        },
+    )
+
+    orders = (
+        strategy.find_take_profit_orders(
+            context=context,
+        )
+    )
+
+    assert len(orders) == 1
+
+    assert orders[0].contract == contract
+    assert orders[0].quantity == 4
