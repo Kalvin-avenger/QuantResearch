@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+
 import pandas as pd
 
 
@@ -39,7 +40,7 @@ class StaticOptionContractUniverseProvider(
 
         if expiration_date_gte is not None:
 
-            expiration_date_gte = pd.Timestamp(
+            minimum_expiration = pd.Timestamp(
                 expiration_date_gte
             )
 
@@ -48,12 +49,12 @@ class StaticOptionContractUniverseProvider(
                 for contract in contracts
                 if pd.Timestamp(
                     contract.expiration
-                ) >= expiration_date_gte
+                ) >= minimum_expiration
             ]
 
         if expiration_date_lte is not None:
 
-            expiration_date_lte = pd.Timestamp(
+            maximum_expiration = pd.Timestamp(
                 expiration_date_lte
             )
 
@@ -62,7 +63,7 @@ class StaticOptionContractUniverseProvider(
                 for contract in contracts
                 if pd.Timestamp(
                     contract.expiration
-                ) <= expiration_date_lte
+                ) <= maximum_expiration
             ]
 
         return contracts

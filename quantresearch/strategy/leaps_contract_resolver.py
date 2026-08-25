@@ -93,9 +93,25 @@ class DynamicLeapsContractResolver(
             timestamp
         )
 
+        minimum_expiration = (
+            timestamp
+            + pd.Timedelta(
+                days=self.min_days_to_expiration
+            )
+        )
+
+        maximum_expiration = (
+            timestamp
+            + pd.Timedelta(
+                days=self.max_days_to_expiration
+            )
+        )
+
         contracts = (
             self.universe_provider.get_contracts(
                 timestamp=timestamp,
+                expiration_date_gte=minimum_expiration,
+                expiration_date_lte=maximum_expiration,
             )
         )
 

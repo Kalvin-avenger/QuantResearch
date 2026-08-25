@@ -16,6 +16,13 @@ from quantresearch.data.providers.massive_options import (
     MassiveHttpClient,
 )
 
+from quantresearch.instruments.options import (
+    OptionContract
+)
+
+from quantresearch.data.providers.massive_options import (
+    normalize_massive_option_bar
+)
 
 
 
@@ -237,20 +244,26 @@ def test_massive_option_contract_universe_provider():
 
     class FakeClient:
 
-        def __init__(self):
+        def __init__(
+            self,
+        ):
             self.calls = []
 
         def get_option_contracts(
             self,
             underlying_ticker,
             as_of,
+            expiration_date_gte=None,
+            expiration_date_lte=None,
         ):
 
             self.calls.append(
-                (
-                    underlying_ticker,
-                    as_of,
-                )
+                {
+                    "underlying_ticker": underlying_ticker,
+                    "as_of": as_of,
+                    "expiration_date_gte": expiration_date_gte,
+                    "expiration_date_lte": expiration_date_lte,
+                }
             )
 
             return raw_contracts
@@ -278,12 +291,13 @@ def test_massive_option_contract_universe_provider():
     assert contracts[1].strike == 510.0
 
     assert client.calls == [
-        (
-            "SPY",
-            timestamp,
-        )
+        {
+            "underlying_ticker": "SPY",
+            "as_of": timestamp,
+            "expiration_date_gte": None,
+            "expiration_date_lte": None,
+        }
     ]
-
 
 
 def test_massive_http_client_retries_after_429(monkeypatch):
@@ -383,68 +397,68 @@ def test_massive_http_client_retries_after_429(monkeypatch):
         1.0
     ]
 
-    def test_massive_http_client_raises_after_max_429_retries(
-        monkeypatch,
-    ):
+def test_massive_http_client_raises_after_max_429_retries(
+    monkeypatch,
+):
 
-        sleep_calls = []
+    sleep_calls = []
 
-        monkeypatch.setattr(
-            "quantresearch.data.providers.massive_options.time.sleep",
-            lambda seconds: sleep_calls.append(seconds),
-        )
+    monkeypatch.setattr(
+        "quantresearch.data.providers.massive_options.time.sleep",
+        lambda seconds: sleep_calls.append(seconds),
+    )
 
-        class FakeResponse:
+    class FakeResponse:
 
-            status_code = 429
-            headers = {}
+        status_code = 429
+        headers = {}
 
-            @property
-            def ok(self):
-                return False
+        @property
+        def ok(self):
+            return False
 
-            def raise_for_status(self):
-                raise requests.HTTPError(
-                    "429 Too Many Requests"
-                )
-
-        class FakeSession:
-
-            def __init__(self):
-                self.calls = 0
-
-            def get(
-                self,
-                url,
-                params=None,
-                headers=None,
-            ):
-                self.calls += 1
-
-                return FakeResponse()
-
-        session = FakeSession()
-
-        client = MassiveHttpClient(
-            api_key="test-key",
-            session=session,
-        )
-
-        with pytest.raises(
-            requests.HTTPError,
-            match="429",
-        ):
-            client._get_with_retry(
-                url="https://example.test",
-                max_retries=2,
-                initial_wait_seconds=1.0,
+        def raise_for_status(self):
+            raise requests.HTTPError(
+                "429 Too Many Requests"
             )
 
+    class FakeSession:
+
+        def __init__(self):
+            self.calls = 0
+
+        def get(
+            self,
+            url,
+            params=None,
+            headers=None,
+        ):
+            self.calls += 1
+
+            return FakeResponse()
+
+    session = FakeSession()
+
+    client = MassiveHttpClient(
+        api_key="test-key",
+        session=session,
+    )
+
+    with pytest.raises(
+        requests.HTTPError,
+        match="429",
+    ):
+        client._get_with_retry(
+            url="https://example.test",
+            max_retries=2,
+            initial_wait_seconds=1.0,
+        )
+
         # Initial request + two retries.
-        assert session.calls == 3
+    assert session.calls == 3
 
         # Sleeps happen before retries 1 and 2.
-        assert sleep_calls == [
+    assert sleep_calls == [
             1.0,
             2.0,
         ]
@@ -588,3 +602,180 @@ def test_massive_option_contract_universe_provider_forwards_expiration_range():
             "expiration_date_lte": expiration_lte,
         }
     ]
+
+
+def test_massive_option_contract_universe_provider_forwards_expiration_range():
+
+    class FakeClient:
+
+        def __init__(
+            self,
+        ):
+            self.calls = []
+
+        def get_option_contracts(
+            self,
+            underlying_ticker,
+            as_of,
+            expiration_date_gte=None,
+            expiration_date_lte=None,
+        ):
+
+            self.calls.append(
+                {
+                    "underlying_ticker": underlying_ticker,
+                    "as_of": as_of,
+                    "expiration_date_gte": expiration_date_gte,
+                    "expiration_date_lte": expiration_date_lte,
+                }
+            )
+
+            return []
+
+    client = FakeClient()
+
+    provider = (
+        MassiveOptionContractUniverseProvider(
+            client=client,
+            underlying="SPY",
+        )
+    )
+
+    timestamp = pd.Timestamp(
+        "2026-01-02"
+    )
+
+    expiration_gte = pd.Timestamp(
+        "2027-01-02"
+    )
+
+    expiration_lte = pd.Timestamp(
+        "2027-07-04"
+    )
+
+    contracts = provider.get_contracts(
+        timestamp=timestamp,
+        expiration_date_gte=expiration_gte,
+        expiration_date_lte=expiration_lte,
+    )
+
+    assert contracts == []
+
+    assert client.calls == [
+        {
+            "underlying_ticker": "SPY",
+            "as_of": timestamp,
+            "expiration_date_gte": expiration_gte,
+            "expiration_date_lte": expiration_lte,
+        }
+    ]
+
+def test_historical_contract_universe_requests_active_contracts():
+
+    class FakeResponse:
+
+        status_code = 200
+        headers = {}
+
+        def json(self):
+            return {
+                "results": [],
+            }
+
+        def raise_for_status(self):
+            return None
+
+    class FakeSession:
+
+        def __init__(self):
+            self.calls = []
+
+        def get(
+            self,
+            url,
+            params=None,
+            headers=None,
+        ):
+            self.calls.append(
+                {
+                    "url": url,
+                    "params": params,
+                    "headers": headers,
+                }
+            )
+
+            return FakeResponse()
+
+    session = FakeSession()
+
+    client = MassiveHttpClient(
+        api_key="test-key",
+        session=session,
+    )
+
+    client.get_option_contracts(
+        underlying_ticker="SPY",
+        as_of=pd.Timestamp("2026-01-02"),
+        expiration_date_gte=pd.Timestamp(
+            "2027-01-02"
+        ),
+        expiration_date_lte=pd.Timestamp(
+            "2027-07-04"
+        ),
+    )
+
+    params = session.calls[0]["params"]
+
+    assert params["as_of"] == "2026-01-02"
+
+    assert params["expired"] == "false"
+
+    assert (
+        params["expiration_date.gte"]
+        == "2027-01-02"
+    )
+
+    assert (
+        params["expiration_date.lte"]
+        == "2027-07-04"
+    )
+
+def test_normalize_massive_option_bar():
+
+    contract = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2027-03-19"),
+        strike=505.0,
+        option_type=OptionType.CALL,
+    )
+
+    raw_bar = {
+        "o": 28.0,
+        "h": 31.0,
+        "l": 27.5,
+        "c": 30.0,
+        "v": 1250,
+        "vw": 29.4,
+        "t": pd.Timestamp(
+            "2026-01-02"
+        ).value // 1_000_000,
+    }
+
+    bar = normalize_massive_option_bar(
+        raw_bar=raw_bar,
+        contract=contract,
+    )
+
+    assert bar.contract == contract
+
+    assert bar.timestamp == pd.Timestamp(
+        "2026-01-02"
+    )
+
+    assert bar.open == 28.0
+    assert bar.high == 31.0
+    assert bar.low == 27.5
+    assert bar.close == 30.0
+
+    assert bar.volume == 1250
+    assert bar.vwap == 29.4

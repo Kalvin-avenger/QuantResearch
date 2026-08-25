@@ -143,6 +143,8 @@ def test_spy_leaps_ladder_selects_dynamic_contract_from_massive_universe():
             self,
             underlying_ticker,
             as_of,
+            expiration_date_gte=None,
+            expiration_date_lte=None,
         ):
 
             self.calls.append(

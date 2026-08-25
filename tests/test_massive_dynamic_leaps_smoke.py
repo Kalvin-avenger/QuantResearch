@@ -38,13 +38,17 @@ def test_massive_dynamic_leaps_historical_data_smoke():
             self,
             underlying_ticker,
             as_of,
+            expiration_date_gte=None,
+            expiration_date_lte=None,
         ):
 
             self.contract_calls.append(
-                (
-                    underlying_ticker,
-                    as_of,
-                )
+                {
+                    "underlying_ticker": underlying_ticker,
+                    "as_of": as_of,
+                    "expiration_date_gte": expiration_date_gte,
+                    "expiration_date_lte": expiration_date_lte,
+                }
             )
 
             return [
@@ -169,10 +173,12 @@ def test_massive_dynamic_leaps_historical_data_smoke():
     assert selected_contract.strike == 500.0
 
     assert client.contract_calls == [
-        (
-            "SPY",
-            historical_date,
-        )
+        {
+            "underlying_ticker": "SPY",
+            "as_of": historical_date,
+            "expiration_date_gte": pd.Timestamp("2027-01-02"),
+            "expiration_date_lte": pd.Timestamp("2027-07-04"),
+        }
     ]
 
     # =====================================================

@@ -95,13 +95,21 @@ def test_dynamic_resolver_requests_contracts_for_timestamp():
         def get_contracts(
             self,
             timestamp,
+            expiration_date_gte=None,
+            expiration_date_lte=None,
         ):
 
             calls.append(
-                timestamp
+                {
+                    "timestamp": timestamp,
+                    "expiration_date_gte": expiration_date_gte,
+                    "expiration_date_lte": expiration_date_lte,
+                }
             )
 
-            return [contract]
+            return [
+                contract
+            ]
 
     resolver = DynamicLeapsContractResolver(
         universe_provider=RecordingProvider(),
@@ -119,7 +127,15 @@ def test_dynamic_resolver_requests_contracts_for_timestamp():
     assert resolved == contract
 
     assert calls == [
-        timestamp
+        {
+            "timestamp": timestamp,
+            "expiration_date_gte": pd.Timestamp(
+                "2027-01-02"
+            ),
+            "expiration_date_lte": pd.Timestamp(
+                "2027-07-04"
+            ),
+        }
     ]
 
 def test_dynamic_resolver_can_select_different_contracts_on_different_dates():
@@ -143,6 +159,8 @@ def test_dynamic_resolver_can_select_different_contracts_on_different_dates():
         def get_contracts(
             self,
             timestamp,
+            expiration_date_gte=None,
+            expiration_date_lte=None,
         ):
 
             timestamp = pd.Timestamp(

@@ -17,6 +17,10 @@ from quantresearch.data.option_contract_universe_provider import (
     OptionContractUniverseProvider
 )
 
+from quantresearch.data.historical_option_bar import (
+    HistoricalOptionBar
+)
+
 
 
 def normalize_massive_option_quote(
@@ -141,6 +145,65 @@ def normalize_massive_option_contract(
             ]
         ),
         option_type=option_type,
+    )
+
+def normalize_massive_option_bar(
+    raw_bar: dict,
+    contract: OptionContract,
+) -> HistoricalOptionBar:
+
+    required_fields = {
+        "o",
+        "h",
+        "l",
+        "c",
+        "t",
+    }
+
+    missing_fields = (
+        required_fields
+        - set(raw_bar)
+    )
+
+    if missing_fields:
+
+        raise ValueError(
+            "missing required field(s): "
+            + ", ".join(
+                sorted(
+                    missing_fields
+                )
+            )
+        )
+
+    return HistoricalOptionBar(
+        contract=contract,
+        timestamp=pd.to_datetime(
+            raw_bar["t"],
+            unit="ms",
+        ),
+        open=float(
+            raw_bar["o"]
+        ),
+        high=float(
+            raw_bar["h"]
+        ),
+        low=float(
+            raw_bar["l"]
+        ),
+        close=float(
+            raw_bar["c"]
+        ),
+        volume=(
+            float(raw_bar["v"])
+            if "v" in raw_bar
+            else None
+        ),
+        vwap=(
+            float(raw_bar["vw"])
+            if "vw" in raw_bar
+            else None
+        ),
     )
 
 class MassiveHistoricalOptionDataProvider:
@@ -387,7 +450,7 @@ class MassiveHttpClient:
                 as_of
             ).strftime("%Y-%m-%d"),
             "contract_type": "call",
-            "expired": "true",
+            "expired": "false",
             "order": "asc",
             "sort": "expiration_date",
             "limit": 1000,
@@ -476,4 +539,76 @@ class MassiveOptionContractUniverseProvider(
                 raw_contract
             )
             for raw_contract in raw_contracts
+        ]
+
+class MassiveHistoricalOptionBarProvider:
+
+    def __init__(
+        self,
+        client,
+    ):
+        self.client = client
+
+    def get_bars(
+        self,
+        contract,
+        start_date,
+        end_date,
+    ):
+
+        ticker = format_massive_option_ticker(
+            contract
+        )
+
+        raw_bars = (
+            self.client.get_aggregate_bars(
+                ticker=ticker,
+                multiplier=1,
+                timespan="day",
+                start_date=start_date,
+                end_date=end_date,
+            )
+        )
+
+        return [
+            normalize_massive_option_bar(
+                raw_bar=raw_bar,
+                contract=contract,
+            )
+            for raw_bar in raw_bars
+        ]
+
+class MassiveHistoricalOptionBarProvider:
+
+    def __init__(
+        self,
+        client,
+    ):
+        self.client = client
+
+    def get_bars(
+        self,
+        contract,
+        start_date,
+        end_date,
+    ):
+
+        ticker = format_massive_option_ticker(
+            contract
+        )
+
+        raw_bars = self.client.get_aggregate_bars(
+            ticker=ticker,
+            multiplier=1,
+            timespan="day",
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        return [
+            normalize_massive_option_bar(
+                raw_bar=raw_bar,
+                contract=contract,
+            )
+            for raw_bar in raw_bars
         ]
