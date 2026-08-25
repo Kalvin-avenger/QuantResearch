@@ -1,5 +1,6 @@
 import pandas as pd
 import requests
+import time
 
 from quantresearch.instruments.options import (
     OptionContract,
@@ -15,6 +16,7 @@ from quantresearch.data.historical_options import (
 from quantresearch.data.option_contract_universe_provider import (
     OptionContractUniverseProvider
 )
+
 
 
 def normalize_massive_option_quote(
@@ -208,16 +210,74 @@ class MassiveHttpClient:
             else requests.Session()
         )
 
+    def _get_with_retry(
+        self,
+        url,
+        params=None,
+        headers=None,
+        max_retries: int = 5,
+        initial_wait_seconds: float = 15.0,
+    ):
+
+        wait_seconds = initial_wait_seconds
+
+        for attempt in range(
+            max_retries + 1
+        ):
+
+            response = self.session.get(
+                url,
+                params=params,
+                headers=headers,
+            )
+
+            if response.status_code != 429:
+
+                response.raise_for_status()
+
+                return response
+
+            if attempt == max_retries:
+
+                print(
+                    "Massive API rate limit: "
+                    "maximum retries exhausted."
+                )
+
+                response.raise_for_status()
+
+            retry_after = response.headers.get(
+                "Retry-After"
+            )
+
+            if retry_after is not None:
+
+                wait_seconds = float(
+                    retry_after
+                )
+
+            print(
+                "Massive API rate limit (429). "
+                f"Retry {attempt + 1}/{max_retries} "
+                f"in {wait_seconds:.0f} seconds..."
+            )
+
+            time.sleep(
+                wait_seconds
+            )
+
+            wait_seconds *= 2
+
     def get_quotes(
         self,
         ticker: str,
         start_date,
         end_date,
-    ) -> list[dict]:
+    ):
 
         url = (
-            f"{self.BASE_URL}"
-            f"/v3/quotes/{ticker}"
+            f"{self.BASE_URL}/v3/quotes/"
+            f"{ticker}"
         )
 
         params = {
@@ -238,39 +298,27 @@ class MassiveHttpClient:
             )
         }
 
-        quotes = []
+        results = []
 
-        while url is not None:
+        while url:
 
-            response = self.session.get(
-                url,
+            response = self._get_with_retry(
+                url=url,
                 params=params,
                 headers=headers,
             )
 
-            response.raise_for_status()
-            # if not response.ok:
-            #     print("status:", response.status_code)
-            #     print("response:", response.text)
+            payload = response.json()
 
-            # response.raise_for_status()
-
-            data = response.json()
-
-            quotes.extend(
-                data.get(
-                    "results",
-                    []
-                )
+            results.extend(
+                payload.get("results", [])
             )
 
-            url = data.get(
-                "next_url"
-            )
+            url = payload.get("next_url")
 
             params = None
 
-        return quotes
+        return results
 
     def get_aggregate_bars(
         self,
@@ -324,6 +372,8 @@ class MassiveHttpClient:
         self,
         underlying_ticker: str,
         as_of,
+        expiration_date_gte=None,
+        expiration_date_lte=None,
     ) -> list[dict]:
 
         url = (
@@ -343,6 +393,22 @@ class MassiveHttpClient:
             "limit": 1000,
         }
 
+        if expiration_date_gte is not None:
+
+            params["expiration_date.gte"] = (
+                pd.Timestamp(
+                    expiration_date_gte
+                ).strftime("%Y-%m-%d")
+            )
+
+        if expiration_date_lte is not None:
+
+            params["expiration_date.lte"] = (
+                pd.Timestamp(
+                    expiration_date_lte
+                ).strftime("%Y-%m-%d")
+            )
+
         headers = {
             "Authorization": (
                 f"Bearer {self.api_key}"
@@ -353,14 +419,11 @@ class MassiveHttpClient:
 
         while url is not None:
 
-            response = self.session.get(
-                url,
+            response = self._get_with_retry(
+                url=url,
                 params=params,
                 headers=headers,
             )
-
-            if not response.ok:
-                response.raise_for_status()
 
             data = response.json()
 
@@ -379,7 +442,7 @@ class MassiveHttpClient:
 
         return contracts
 
-    
+        
 class MassiveOptionContractUniverseProvider(
     OptionContractUniverseProvider
 ):
@@ -395,12 +458,16 @@ class MassiveOptionContractUniverseProvider(
     def get_contracts(
         self,
         timestamp,
+        expiration_date_gte=None,
+        expiration_date_lte=None,
     ):
 
         raw_contracts = (
             self.client.get_option_contracts(
                 underlying_ticker=self.underlying,
                 as_of=timestamp,
+                expiration_date_gte=expiration_date_gte,
+                expiration_date_lte=expiration_date_lte,
             )
         )
 

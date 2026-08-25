@@ -178,3 +178,48 @@ def test_dynamic_resolver_can_select_different_contracts_on_different_dates():
 
     assert first == first_contract
     assert second == second_contract
+
+def test_static_option_contract_universe_provider_filters_expiration_range():
+
+    early = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2026-12-18"),
+        strike=500.0,
+        option_type=OptionType.CALL,
+    )
+
+    middle = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2027-04-16"),
+        strike=500.0,
+        option_type=OptionType.CALL,
+    )
+
+    late = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2027-08-20"),
+        strike=500.0,
+        option_type=OptionType.CALL,
+    )
+
+    provider = StaticOptionContractUniverseProvider(
+        contracts=[
+            early,
+            middle,
+            late,
+        ],
+    )
+
+    contracts = provider.get_contracts(
+        timestamp=pd.Timestamp("2026-01-02"),
+        expiration_date_gte=pd.Timestamp(
+            "2027-01-02"
+        ),
+        expiration_date_lte=pd.Timestamp(
+            "2027-07-04"
+        ),
+    )
+
+    assert contracts == [
+        middle
+    ]
