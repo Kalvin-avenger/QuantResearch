@@ -51,6 +51,7 @@ class DynamicLeapsContractResolver(
         min_days_to_expiration: int = 365,
         max_days_to_expiration: int = 548,
         target_days_to_expiration: int = 456,
+        tradability_provider=None,
     ):
 
         if universe_provider is None:
@@ -81,6 +82,32 @@ class DynamicLeapsContractResolver(
 
         self.target_days_to_expiration = (
             target_days_to_expiration
+        )
+
+        self.tradability_provider = (
+            tradability_provider
+        )
+
+    def _ranking_key(
+        self,
+        item,
+        underlying_price: float,
+    ):
+        contract, days_to_expiration = item
+
+        return (
+            abs(
+                days_to_expiration
+                - self.target_days_to_expiration
+            ),
+            abs(
+                contract.strike
+                - underlying_price
+            ),
+            pd.Timestamp(
+                contract.expiration
+            ),
+            contract.strike,
         )
 
     def resolve(
@@ -157,20 +184,49 @@ class DynamicLeapsContractResolver(
                 "No eligible LEAPS contracts found"
             )
 
-        return min(
+        ranked = sorted(
             eligible,
             key=lambda item: (
-                abs(
-                    item[1]
-                    - self.target_days_to_expiration
-                ),
-                abs(
-                    item[0].strike
-                    - underlying_price
-                ),
-                pd.Timestamp(
-                    item[0].expiration
-                ),
-                item[0].strike,
+                self._ranking_key(
+                    item=item,
+                    underlying_price=(
+                        underlying_price
+                    ),
+                )
             ),
-        )[0]
+        )
+
+        # -------------------------------------------------
+        # Legacy behavior
+        #
+        # If no tradability provider is configured,
+        # preserve the existing selection semantics.
+        # -------------------------------------------------
+
+        if self.tradability_provider is None:
+            return ranked[0][0]
+
+        # -------------------------------------------------
+        # Historical tradability filtering
+        #
+        # Candidates remain ordered using exactly the same
+        # DTE / ATM ranking logic as before.
+        #
+        # We simply skip candidates that do not have a
+        # market bar on the requested entry date.
+        # -------------------------------------------------
+
+        for (
+            contract,
+            _,
+        ) in ranked:
+
+            if self.tradability_provider.has_bar(
+                timestamp=timestamp,
+                contract=contract,
+            ):
+                return contract
+
+        raise ValueError(
+            "No tradable LEAPS contracts found"
+        )

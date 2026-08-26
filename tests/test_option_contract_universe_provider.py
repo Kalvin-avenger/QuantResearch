@@ -15,6 +15,10 @@ from quantresearch.strategy.leaps_contract_resolver import (
     DynamicLeapsContractResolver
 )
 
+from quantresearch.data.providers.massive_options import (
+    MassiveOptionContractUniverseProvider
+)
+
 
 def test_option_contract_universe_provider_is_abstract():
 
@@ -241,3 +245,65 @@ def test_static_option_contract_universe_provider_filters_expiration_range():
     assert contracts == [
         middle
     ]
+
+
+def test_massive_contract_universe_provider_caches_same_query():
+    raw_contracts = [
+        {
+            "underlying_ticker": "SPY",
+            "expiration_date": "2027-03-19",
+            "strike_price": 685.0,
+            "contract_type": "call",
+        }
+    ]
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = 0
+
+        def get_option_contracts(
+            self,
+            underlying_ticker,
+            as_of,
+            expiration_date_gte=None,
+            expiration_date_lte=None,
+        ):
+            self.calls += 1
+
+            return raw_contracts
+
+    client = FakeClient()
+
+    provider = (
+        MassiveOptionContractUniverseProvider(
+            client=client,
+            underlying="SPY",
+        )
+    )
+
+    kwargs = {
+        "timestamp": pd.Timestamp(
+            "2026-01-02"
+        ),
+        "expiration_date_gte": pd.Timestamp(
+            "2027-01-02"
+        ),
+        "expiration_date_lte": pd.Timestamp(
+            "2027-07-04"
+        ),
+    }
+
+    first = provider.get_contracts(
+        **kwargs
+    )
+
+    second = provider.get_contracts(
+        **kwargs
+    )
+
+    assert client.calls == 1
+
+    assert first == second
+    assert len(first) == 1
+
+    assert first[0].strike == 685.0

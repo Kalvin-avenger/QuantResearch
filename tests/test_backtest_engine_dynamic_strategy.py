@@ -27,6 +27,16 @@ from quantresearch.data.historical_options import (
     HistoricalOptionQuoteStore,
 )
 
+from quantresearch.data.daily_option_pricing import (
+    DailyCloseOptionPricingPolicy,
+)
+
+from quantresearch.data.historical_option_bar import (
+    HistoricalOptionBar,
+)
+
+from quantresearch.accounting.option_position import OptionPosition
+
 
 class DynamicStrategy:
 
@@ -369,3 +379,154 @@ def test_engine_executes_multiple_option_sells_on_same_bar():
     assert portfolio.realized_pnl == pytest.approx(
         20000.0
     )
+
+def test_build_strategy_context_supports_daily_option_bar_provider():
+    contract = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2027-03-19"),
+        strike=505.0,
+        option_type=OptionType.CALL,
+    )
+
+    bar = HistoricalOptionBar(
+        contract=contract,
+        timestamp=pd.Timestamp("2026-01-02"),
+        open=28.0,
+        high=31.0,
+        low=27.5,
+        close=30.0,
+        volume=1250.0,
+        vwap=29.4,
+    )
+
+    class FakeOptionBarProvider:
+        def __init__(self):
+            self.calls = []
+
+        def get_bar(
+            self,
+            timestamp,
+            contract,
+        ):
+            self.calls.append(
+                (timestamp, contract)
+            )
+
+            assert timestamp == pd.Timestamp(
+                "2026-01-02"
+            )
+            assert contract == bar.contract
+
+            return bar
+
+    portfolio = Portfolio(
+        initial_cash=100000,
+    )
+
+    portfolio.option_positions[contract] = OptionPosition(
+        contract=contract,
+        quantity=1,
+        average_cost=25.0,
+    )
+
+    provider = FakeOptionBarProvider()
+
+    engine = BacktestEngine()
+
+    context = engine._build_strategy_context(
+        timestamp=pd.Timestamp("2026-01-02"),
+        portfolio=portfolio,
+        option_data_provider=None,
+        option_bar_provider=provider,
+        option_pricing_policy=DailyCloseOptionPricingPolicy(),
+    )
+
+    assert len(provider.calls) == 1
+
+    assert provider.calls[0] == (
+        pd.Timestamp("2026-01-02"),
+        contract,
+    )
+
+    assert contract in context.option_quotes
+
+    quote = context.option_quotes[contract]
+
+    assert quote.contract == contract
+    assert quote.ask == 30.0
+    assert quote.bid == 30.0
+    assert quote.mark_price == 30.0
+
+def test_backtest_engine_run_supports_daily_option_bar_provider():
+    contract = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2027-03-19"),
+        strike=505.0,
+        option_type=OptionType.CALL,
+    )
+
+    prices = pd.Series(
+        [500.0],
+        index=[
+            pd.Timestamp("2026-01-02"),
+        ],
+    )
+
+    bar = HistoricalOptionBar(
+        contract=contract,
+        timestamp=pd.Timestamp("2026-01-02"),
+        open=28.0,
+        high=31.0,
+        low=27.5,
+        close=30.0,
+        volume=1250.0,
+        vwap=29.4,
+    )
+
+    class FakeOptionBarProvider:
+        def get_bar(
+            self,
+            timestamp,
+            contract,
+        ):
+            return bar
+
+    class BuyOptionStrategy:
+        def on_bar(
+            self,
+            timestamp,
+            price,
+            context,
+        ):
+            return OptionOrder(
+                contract=contract,
+                action=Signal.BUY,
+                quantity=1,
+            )
+
+    portfolio = Portfolio(
+        initial_cash=100000,
+    )
+
+    engine = BacktestEngine()
+
+    engine.run(
+        prices=prices,
+        strategy=BuyOptionStrategy(),
+        portfolio=portfolio,
+        option_bar_provider=FakeOptionBarProvider(),
+        option_pricing_policy=(
+            DailyCloseOptionPricingPolicy()
+        ),
+    )
+
+    assert contract in portfolio.option_positions
+
+    position = portfolio.option_positions[
+        contract
+    ]
+
+    assert position.quantity == 1
+    assert position.average_cost == 30.0
+
+    assert portfolio.cash == 97000.0

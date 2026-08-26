@@ -54,6 +54,18 @@ from quantresearch.data.historical_options import (
     HistoricalOptionQuoteStore,
 )
 
+from quantresearch.backtest.engine import BacktestEngine
+
+from quantresearch.data.daily_option_pricing import (
+    DailyCloseOptionPricingPolicy,
+)
+
+from quantresearch.data.historical_option_bar import (
+    HistoricalOptionBar,
+)
+
+from quantresearch.portfolio import Portfolio
+
 
 
 
@@ -1142,3 +1154,305 @@ def test_spy_leaps_ladder_multi_contract_take_profit_end_to_end():
     # Backtest completed normally.
 
     assert result.portfolio is portfolio
+
+def test_spy_leaps_ladder_daily_bar_dynamic_leaps_end_to_end():
+
+    contract = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2027-04-16"),
+        strike=500.0,
+        option_type=OptionType.CALL,
+    )
+
+    # =====================================================
+    # Dynamic contract universe
+    # =====================================================
+
+    resolver = DynamicLeapsContractResolver(
+        contracts=[
+            contract,
+        ],
+    )
+
+    strategy = SpyLeapsLadderStrategy(
+        contract_resolver=resolver,
+        initial_capital=100000.0,
+        equity_allocation=0.25,
+        option_allocation=0.25,
+        max_tranches=1,
+        take_profit_threshold=0.25,
+    )
+
+    # =====================================================
+    # Two-day SPY path
+    # =====================================================
+
+    prices = pd.Series(
+        [
+            500.0,
+            500.0,
+        ],
+        index=[
+            pd.Timestamp("2026-01-02"),
+            pd.Timestamp("2026-01-05"),
+        ],
+    )
+
+    # =====================================================
+    # Daily option bars
+    #
+    # Day 1:
+    # close = 30
+    #
+    # Day 2:
+    # close = 40
+    #
+    # Return = 40 / 30 - 1 = 33.3%
+    # which is above 25% take-profit threshold.
+    # =====================================================
+
+    bars = {
+        pd.Timestamp("2026-01-02"): HistoricalOptionBar(
+            contract=contract,
+            timestamp=pd.Timestamp("2026-01-02"),
+            open=29.0,
+            high=31.0,
+            low=28.0,
+            close=30.0,
+            volume=1000.0,
+            vwap=29.8,
+        ),
+        pd.Timestamp("2026-01-05"): HistoricalOptionBar(
+            contract=contract,
+            timestamp=pd.Timestamp("2026-01-05"),
+            open=38.0,
+            high=41.0,
+            low=37.5,
+            close=40.0,
+            volume=1500.0,
+            vwap=39.5,
+        ),
+    }
+
+    class FakeOptionBarProvider:
+
+        def __init__(self):
+            self.calls = []
+
+        def get_bar(
+            self,
+            timestamp,
+            contract,
+        ):
+            timestamp = pd.Timestamp(
+                timestamp
+            )
+
+            self.calls.append(
+                (
+                    timestamp,
+                    contract,
+                )
+            )
+
+            return bars[
+                timestamp
+            ]
+
+    provider = FakeOptionBarProvider()
+
+    portfolio = Portfolio(
+        initial_cash=100000.0,
+    )
+
+    engine = BacktestEngine()
+
+    result = engine.run(
+        prices=prices,
+        strategy=strategy,
+        portfolio=portfolio,
+        option_bar_provider=provider,
+        option_pricing_policy=(
+            DailyCloseOptionPricingPolicy()
+        ),
+    )
+
+    # =====================================================
+    # Dynamic contract was actually used
+    # =====================================================
+
+    assert len(strategy.tranches) == 1
+
+    tranche = strategy.tranches[0]
+
+    assert tranche.option_contract == contract
+
+    # =====================================================
+    # Option should have been sold on Day 2
+    # =====================================================
+
+    assert contract not in portfolio.option_positions
+
+    assert tranche.option_closed is True
+
+    # =====================================================
+    # Equity leg remains open
+    # =====================================================
+
+    assert portfolio.position.quantity == 50
+
+    # =====================================================
+    # Option realized PnL
+    #
+    # Option allocation = 25% of 100,000 = 25,000
+    #
+    # Contract cost:
+    # 30 * 100 = 3,000
+    #
+    # Quantity:
+    # floor(25,000 / 3,000) = 8
+    #
+    # Profit:
+    # (40 - 30) * 8 * 100 = 8,000
+    # =====================================================
+
+    assert portfolio.realized_pnl == 8000.0
+
+    # =====================================================
+    # Final cash
+    #
+    # Initial:
+    # 100,000
+    #
+    # Equity:
+    # 50 * 500 = 25,000
+    #
+    # Option BUY:
+    # 8 * 30 * 100 = 24,000
+    #
+    # Option SELL:
+    # 8 * 40 * 100 = 32,000
+    #
+    # Final cash:
+    # 100,000 - 25,000 - 24,000 + 32,000
+    # = 83,000
+    # =====================================================
+
+    assert portfolio.cash == 83000.0
+
+    # =====================================================
+    # Final NAV
+    #
+    # cash = 83,000
+    # equity = 50 * 500 = 25,000
+    #
+    # total = 108,000
+    # =====================================================
+
+    assert result.equity_curve[-1] == 108000.0
+
+def test_daily_option_mark_to_market_uses_last_price_when_bar_missing():
+
+    contract = OptionContract(
+        underlying="SPY",
+        expiration=pd.Timestamp("2027-04-16"),
+        strike=500.0,
+        option_type=OptionType.CALL,
+    )
+
+    prices = pd.Series(
+        [500.0, 500.0],
+        index=[
+            pd.Timestamp("2026-01-02"),
+            pd.Timestamp("2026-01-05"),
+        ],
+    )
+
+    first_bar = HistoricalOptionBar(
+        contract=contract,
+        timestamp=pd.Timestamp("2026-01-02"),
+        open=29.0,
+        high=31.0,
+        low=28.0,
+        close=30.0,
+        volume=1000.0,
+        vwap=29.8,
+    )
+
+    class FakeOptionBarProvider:
+
+        def get_bar(
+            self,
+            timestamp,
+            contract,
+        ):
+            timestamp = pd.Timestamp(timestamp)
+
+            if timestamp == pd.Timestamp(
+                "2026-01-02"
+            ):
+                return first_bar
+
+            raise ValueError(
+                "No historical option bar found"
+            )
+
+    class BuyOnceStrategy:
+
+        def __init__(self):
+            self.bought = False
+
+        def on_bar(
+            self,
+            timestamp,
+            price,
+            context,
+        ):
+            if not self.bought:
+                self.bought = True
+
+                return OptionOrder(
+                    contract=contract,
+                    action=Signal.BUY,
+                    quantity=1,
+                )
+
+            return None
+
+    portfolio = Portfolio(
+        initial_cash=100000.0,
+    )
+
+    engine = BacktestEngine()
+
+    result = engine.run(
+        prices=prices,
+        strategy=BuyOnceStrategy(),
+        portfolio=portfolio,
+        option_bar_provider=FakeOptionBarProvider(),
+        option_pricing_policy=(
+            DailyCloseOptionPricingPolicy()
+        ),
+    )
+
+    assert contract in portfolio.option_positions
+
+    position = portfolio.option_positions[
+        contract
+    ]
+
+    assert position.quantity == 1
+    assert position.average_cost == 30.0
+
+    # Day 2 has no option bar, so MTM should
+    # fall back to Day 1's last known price.
+    #
+    # Cash:
+    # 100000 - 30 * 100 = 97000
+    #
+    # Option value:
+    # 30 * 100 = 3000
+    #
+    # NAV:
+    # 100000
+    assert result.equity_curve[-1] == 100000.0

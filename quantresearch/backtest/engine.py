@@ -37,6 +37,10 @@ from quantresearch.data.option_provider import (
     HistoricalOptionDataProvider,
 )
 
+from quantresearch.data.daily_option_pricing import (
+    DailyOptionExecutionQuoteAdapter,
+)
+
 
 class BacktestEngine:
     """
@@ -145,6 +149,52 @@ class BacktestEngine:
     # Option execution
     # =====================================================
 
+    def _resolve_option_market_quote(
+        self,
+        timestamp,
+        contract,
+        option_data_provider=None,
+        option_bar_provider=None,
+        option_pricing_policy=None,
+    ):
+        # ---------------------------------------------
+        # Existing quote-driven path
+        # ---------------------------------------------
+        if option_data_provider is not None:
+            return option_data_provider.get_quote(
+                timestamp=timestamp,
+                contract=contract,
+            )
+
+        # ---------------------------------------------
+        # Daily bar-driven path
+        # ---------------------------------------------
+        if option_bar_provider is not None:
+            if option_pricing_policy is None:
+                raise ValueError(
+                    "option_pricing_policy is required "
+                    "when option_bar_provider is used"
+                )
+
+            bar = option_bar_provider.get_bar(
+                timestamp=timestamp,
+                contract=contract,
+            )
+
+            pricing = (
+                option_pricing_policy.get_pricing(
+                    bar=bar,
+                )
+            )
+
+            return DailyOptionExecutionQuoteAdapter(
+                pricing=pricing,
+            )
+
+        raise ValueError(
+            "option market data provider is required"
+        )
+
     def _execute_option_order(
         self,
         order: OptionOrder,
@@ -174,14 +224,19 @@ class BacktestEngine:
             | None
         ),
         last_option_prices: dict,
+        option_bar_provider=None,
+        option_pricing_policy=None,
     ) -> dict:
 
         if not portfolio.option_positions:
             return {}
 
-        if option_data_provider is None:
+        if (
+            option_data_provider is None
+            and option_bar_provider is None
+        ):
             raise ValueError(
-                "option_data_provider is required "
+                "option market data provider is required "
                 "to value option positions"
             )
 
@@ -191,14 +246,25 @@ class BacktestEngine:
 
             try:
 
-                quote = (
-                    option_data_provider.get_quote(
-                        timestamp=timestamp,
-                        contract=contract,
-                    )
+                quote = self._resolve_option_market_quote(
+                    timestamp=timestamp,
+                    contract=contract,
+                    option_data_provider=(
+                        option_data_provider
+                    ),
+                    option_bar_provider=(
+                        option_bar_provider
+                    ),
+                    option_pricing_policy=(
+                        option_pricing_policy
+                    ),
                 )
 
-                mark_price = quote.bid
+                mark_price = getattr(
+                    quote,
+                    "mark_price",
+                    quote.bid,
+                )
 
                 last_option_prices[
                     contract
@@ -229,24 +295,33 @@ class BacktestEngine:
         self,
         timestamp,
         portfolio: Portfolio,
-        option_data_provider: (
-            HistoricalOptionDataProvider
-            | None
-        ),
+        option_data_provider=None,
+        option_bar_provider=None,
+        option_pricing_policy=None,
     ) -> StrategyContext:
 
         option_quotes = {}
 
-        if option_data_provider is not None:
-
+        if (
+            option_data_provider is not None
+            or option_bar_provider is not None
+        ):
             for contract in portfolio.option_positions:
 
                 try:
-
                     quote = (
-                        option_data_provider.get_quote(
+                        self._resolve_option_market_quote(
                             timestamp=timestamp,
                             contract=contract,
+                            option_data_provider=(
+                                option_data_provider
+                            ),
+                            option_bar_provider=(
+                                option_bar_provider
+                            ),
+                            option_pricing_policy=(
+                                option_pricing_policy
+                            ),
                         )
                     )
 
@@ -255,14 +330,11 @@ class BacktestEngine:
                     ] = quote
 
                 except ValueError:
-                    # Missing quote is allowed in the
-                    # runtime context.
+                    # Missing market data is allowed
+                    # in runtime strategy context.
                     #
-                    # The strategy can decide not to act.
-                    #
-                    # Mark-to-market forward-fill remains
-                    # handled separately by
-                    # _get_option_mark_prices().
+                    # Strategy may simply decide
+                    # not to act.
                     pass
 
         return StrategyContext(
@@ -286,6 +358,8 @@ class BacktestEngine:
         trades: list,
         option_data_provider,
         allocation_cash: float,
+        option_bar_provider=None,
+        option_pricing_policy=None,
     ) -> None:
 
         # -------------------------------------------------
@@ -300,17 +374,12 @@ class BacktestEngine:
             ),
         ):
 
-            if option_data_provider is None:
-                raise ValueError(
-                    "option_data_provider is required "
-                    "for option instructions"
-                )
-
-            quote = (
-                option_data_provider.get_quote(
-                    timestamp=timestamp,
-                    contract=instruction.contract,
-                )
+            quote = self._resolve_option_market_quote(
+                timestamp=timestamp,
+                contract=instruction.contract,
+                option_data_provider=option_data_provider,
+                option_bar_provider=option_bar_provider,
+                option_pricing_policy=option_pricing_policy,
             )
 
             order = (
@@ -400,6 +469,8 @@ class BacktestEngine:
             HistoricalOptionDataProvider
             | None
         ) = None,
+        option_bar_provider=None,
+        option_pricing_policy=None,
     ) -> BacktestResult:
 
         # -------------------------------------------------
@@ -505,14 +576,12 @@ class BacktestEngine:
 
             if dynamic_strategy:
 
-                context = (
-                    self._build_strategy_context(
-                        timestamp=timestamp,
-                        portfolio=portfolio,
-                        option_data_provider=(
-                            option_data_provider
-                        ),
-                    )
+                context = self._build_strategy_context(
+                    timestamp=timestamp,
+                    portfolio=portfolio,
+                    option_data_provider=option_data_provider,
+                    option_bar_provider=option_bar_provider,
+                    option_pricing_policy=option_pricing_policy,
                 )
 
                 instruction = strategy.on_bar(
@@ -573,19 +642,15 @@ class BacktestEngine:
                     ):
 
                         self._execute_explicit_instruction(
-                            instruction=(
-                                daily_instruction
-                            ),
+                            instruction=daily_instruction,
                             price=price,
                             timestamp=timestamp,
                             portfolio=portfolio,
                             trades=trades,
-                            option_data_provider=(
-                                option_data_provider
-                            ),
-                            allocation_cash=(
-                                daily_cash_snapshot
-                            ),
+                            option_data_provider=option_data_provider,
+                            option_bar_provider=option_bar_provider,
+                            option_pricing_policy=option_pricing_policy,
+                            allocation_cash=daily_cash_snapshot,
                         )
 
             # =============================================
@@ -672,6 +737,12 @@ class BacktestEngine:
                     portfolio=portfolio,
                     option_data_provider=(
                         option_data_provider
+                    ),
+                    option_bar_provider=(
+                        option_bar_provider
+                    ),
+                    option_pricing_policy=(
+                        option_pricing_policy
                     ),
                     last_option_prices=(
                         last_option_prices

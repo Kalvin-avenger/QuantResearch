@@ -12,39 +12,30 @@ from quantresearch.data.historical_option_quote import (
 from quantresearch.data.historical_options import (
     HistoricalOptionQuoteStore,
 )
-
 from quantresearch.data.option_contract_universe_provider import (
-    OptionContractUniverseProvider
+    OptionContractUniverseProvider,
 )
-
 from quantresearch.data.historical_option_bar import (
-    HistoricalOptionBar
+    HistoricalOptionBar,
 )
-
 
 
 def normalize_massive_option_quote(
     raw_quote: dict,
     contract: OptionContract,
 ) -> HistoricalOptionQuote:
-
     required_fields = {
         "bid_price",
         "ask_price",
         "sip_timestamp",
     }
 
-    missing_fields = (
-        required_fields
-        - set(raw_quote)
-    )
+    missing_fields = required_fields - set(raw_quote)
 
     if missing_fields:
         raise ValueError(
             "missing required field(s): "
-            + ", ".join(
-                sorted(missing_fields)
-            )
+            + ", ".join(sorted(missing_fields))
         )
 
     timestamp = pd.to_datetime(
@@ -59,13 +50,11 @@ def normalize_massive_option_quote(
         ask=float(raw_quote["ask_price"]),
     )
 
+
 def format_massive_option_ticker(
     contract: OptionContract,
 ) -> str:
-
-    expiration = contract.expiration.strftime(
-        "%y%m%d"
-    )
+    expiration = contract.expiration.strftime("%y%m%d")
 
     option_type = (
         "C"
@@ -88,10 +77,10 @@ def format_massive_option_ticker(
         f"{strike_code}"
     )
 
+
 def normalize_massive_option_contract(
     raw_contract: dict,
 ) -> OptionContract:
-
     required_fields = {
         "underlying_ticker",
         "expiration_date",
@@ -99,18 +88,13 @@ def normalize_massive_option_contract(
         "contract_type",
     }
 
-    missing_fields = (
-        required_fields
-        - set(raw_contract)
-    )
+    missing_fields = required_fields - set(raw_contract)
 
     if missing_fields:
         raise ValueError(
             "missing required field(s): "
             + ", ".join(
-                sorted(
-                    missing_fields
-                )
+                sorted(missing_fields)
             )
         )
 
@@ -147,11 +131,11 @@ def normalize_massive_option_contract(
         option_type=option_type,
     )
 
+
 def normalize_massive_option_bar(
     raw_bar: dict,
     contract: OptionContract,
 ) -> HistoricalOptionBar:
-
     required_fields = {
         "o",
         "h",
@@ -160,19 +144,13 @@ def normalize_massive_option_bar(
         "t",
     }
 
-    missing_fields = (
-        required_fields
-        - set(raw_bar)
-    )
+    missing_fields = required_fields - set(raw_bar)
 
     if missing_fields:
-
         raise ValueError(
             "missing required field(s): "
             + ", ".join(
-                sorted(
-                    missing_fields
-                )
+                sorted(missing_fields)
             )
         )
 
@@ -182,18 +160,10 @@ def normalize_massive_option_bar(
             raw_bar["t"],
             unit="ms",
         ),
-        open=float(
-            raw_bar["o"]
-        ),
-        high=float(
-            raw_bar["h"]
-        ),
-        low=float(
-            raw_bar["l"]
-        ),
-        close=float(
-            raw_bar["c"]
-        ),
+        open=float(raw_bar["o"]),
+        high=float(raw_bar["h"]),
+        low=float(raw_bar["l"]),
+        close=float(raw_bar["c"]),
         volume=(
             float(raw_bar["v"])
             if "v" in raw_bar
@@ -205,6 +175,7 @@ def normalize_massive_option_bar(
             else None
         ),
     )
+
 
 class MassiveHistoricalOptionDataProvider:
 
@@ -220,7 +191,6 @@ class MassiveHistoricalOptionDataProvider:
         start_date,
         end_date,
     ) -> list[HistoricalOptionQuote]:
-
         ticker = format_massive_option_ticker(
             contract
         )
@@ -245,7 +215,6 @@ class MassiveHistoricalOptionDataProvider:
         start_date,
         end_date,
     ) -> HistoricalOptionQuoteStore:
-
         quotes = self.get_quotes(
             contract=contract,
             start_date=start_date,
@@ -281,13 +250,11 @@ class MassiveHttpClient:
         max_retries: int = 5,
         initial_wait_seconds: float = 15.0,
     ):
-
         wait_seconds = initial_wait_seconds
 
         for attempt in range(
             max_retries + 1
         ):
-
             response = self.session.get(
                 url,
                 params=params,
@@ -295,13 +262,10 @@ class MassiveHttpClient:
             )
 
             if response.status_code != 429:
-
                 response.raise_for_status()
-
                 return response
 
             if attempt == max_retries:
-
                 print(
                     "Massive API rate limit: "
                     "maximum retries exhausted."
@@ -314,7 +278,6 @@ class MassiveHttpClient:
             )
 
             if retry_after is not None:
-
                 wait_seconds = float(
                     retry_after
                 )
@@ -337,7 +300,6 @@ class MassiveHttpClient:
         start_date,
         end_date,
     ):
-
         url = (
             f"{self.BASE_URL}/v3/quotes/"
             f"{ticker}"
@@ -364,7 +326,6 @@ class MassiveHttpClient:
         results = []
 
         while url:
-
             response = self._get_with_retry(
                 url=url,
                 params=params,
@@ -374,10 +335,15 @@ class MassiveHttpClient:
             payload = response.json()
 
             results.extend(
-                payload.get("results", [])
+                payload.get(
+                    "results",
+                    [],
+                )
             )
 
-            url = payload.get("next_url")
+            url = payload.get(
+                "next_url"
+            )
 
             params = None
 
@@ -391,7 +357,6 @@ class MassiveHttpClient:
         multiplier: int = 1,
         timespan: str = "day",
     ) -> list[dict]:
-
         url = (
             f"{self.BASE_URL}"
             f"/v2/aggs/ticker/{ticker}"
@@ -412,23 +377,17 @@ class MassiveHttpClient:
             )
         }
 
-        response = self.session.get(
-            url,
+        response = self._get_with_retry(
+            url=url,
             params=params,
             headers=headers,
         )
-
-        if not response.ok:
-            print("status:", response.status_code)
-            print("response:", response.text)
-
-        response.raise_for_status()
 
         data = response.json()
 
         return data.get(
             "results",
-            []
+            [],
         )
 
     def get_option_contracts(
@@ -438,7 +397,6 @@ class MassiveHttpClient:
         expiration_date_gte=None,
         expiration_date_lte=None,
     ) -> list[dict]:
-
         url = (
             f"{self.BASE_URL}"
             f"/v3/reference/options/contracts"
@@ -457,7 +415,6 @@ class MassiveHttpClient:
         }
 
         if expiration_date_gte is not None:
-
             params["expiration_date.gte"] = (
                 pd.Timestamp(
                     expiration_date_gte
@@ -465,7 +422,6 @@ class MassiveHttpClient:
             )
 
         if expiration_date_lte is not None:
-
             params["expiration_date.lte"] = (
                 pd.Timestamp(
                     expiration_date_lte
@@ -481,7 +437,6 @@ class MassiveHttpClient:
         contracts = []
 
         while url is not None:
-
             response = self._get_with_retry(
                 url=url,
                 params=params,
@@ -505,7 +460,7 @@ class MassiveHttpClient:
 
         return contracts
 
-        
+
 class MassiveOptionContractUniverseProvider(
     OptionContractUniverseProvider
 ):
@@ -518,65 +473,70 @@ class MassiveOptionContractUniverseProvider(
         self.client = client
         self.underlying = underlying
 
+        self._contracts_cache = {}
+
     def get_contracts(
         self,
         timestamp,
         expiration_date_gte=None,
         expiration_date_lte=None,
     ):
+        timestamp = pd.Timestamp(
+            timestamp
+        ).normalize()
+
+        expiration_date_gte = (
+            pd.Timestamp(
+                expiration_date_gte
+            ).normalize()
+            if expiration_date_gte is not None
+            else None
+        )
+
+        expiration_date_lte = (
+            pd.Timestamp(
+                expiration_date_lte
+            ).normalize()
+            if expiration_date_lte is not None
+            else None
+        )
+
+        cache_key = (
+            timestamp,
+            expiration_date_gte,
+            expiration_date_lte,
+        )
+
+        if cache_key in self._contracts_cache:
+            return self._contracts_cache[
+                cache_key
+            ]
 
         raw_contracts = (
             self.client.get_option_contracts(
                 underlying_ticker=self.underlying,
                 as_of=timestamp,
-                expiration_date_gte=expiration_date_gte,
-                expiration_date_lte=expiration_date_lte,
+                expiration_date_gte=(
+                    expiration_date_gte
+                ),
+                expiration_date_lte=(
+                    expiration_date_lte
+                ),
             )
         )
 
-        return [
+        contracts = [
             normalize_massive_option_contract(
                 raw_contract
             )
             for raw_contract in raw_contracts
         ]
 
-class MassiveHistoricalOptionBarProvider:
+        self._contracts_cache[
+            cache_key
+        ] = contracts
 
-    def __init__(
-        self,
-        client,
-    ):
-        self.client = client
-
-    def get_bars(
-        self,
-        contract,
-        start_date,
-        end_date,
-    ):
-
-        ticker = format_massive_option_ticker(
-            contract
-        )
-
-        raw_bars = (
-            self.client.get_aggregate_bars(
-                ticker=ticker,
-                multiplier=1,
-                timespan="day",
-                start_date=start_date,
-                end_date=end_date,
-            )
-        )
-
-        return [
-            normalize_massive_option_bar(
-                raw_bar=raw_bar,
-                contract=contract,
-            )
-            for raw_bar in raw_bars
-        ]
+        return contracts
 
 class MassiveHistoricalOptionBarProvider:
 
@@ -586,13 +546,75 @@ class MassiveHistoricalOptionBarProvider:
     ):
         self.client = client
 
-    def get_bars(
+        self._bar_cache = {}
+
+        self._backtest_start_date = None
+        self._backtest_end_date = None
+
+    # =====================================================
+    # Backtest range configuration
+    # =====================================================
+
+    def set_backtest_range(
         self,
-        contract,
         start_date,
         end_date,
     ):
+        self._backtest_start_date = (
+            pd.Timestamp(
+                start_date
+            ).normalize()
+        )
 
+        self._backtest_end_date = (
+            pd.Timestamp(
+                end_date
+            ).normalize()
+        )
+
+    def has_bar(
+        self,
+        timestamp,
+        contract: OptionContract,
+    ) -> bool:
+
+        timestamp = pd.Timestamp(
+            timestamp
+        ).normalize()
+
+        cache_key = (
+            timestamp,
+            contract,
+        )
+
+        if cache_key in self._bar_cache:
+            return True
+
+        bars = self.get_bars(
+            contract=contract,
+            start_date=timestamp,
+            end_date=timestamp,
+        )
+
+        self._cache_bars(
+            bars
+        )
+
+        return (
+            cache_key
+            in self._bar_cache
+        )
+
+    # =====================================================
+    # Range retrieval
+    # =====================================================
+
+    def get_bars(
+        self,
+        contract: OptionContract,
+        start_date,
+        end_date,
+    ) -> list[HistoricalOptionBar]:
         ticker = format_massive_option_ticker(
             contract
         )
@@ -612,3 +634,129 @@ class MassiveHistoricalOptionBarProvider:
             )
             for raw_bar in raw_bars
         ]
+
+    # =====================================================
+    # Cache helper
+    # =====================================================
+
+    def _cache_bars(
+        self,
+        bars: list[HistoricalOptionBar],
+    ) -> None:
+        for bar in bars:
+
+            bar_date = pd.Timestamp(
+                bar.timestamp
+            ).normalize()
+
+            cache_key = (
+                bar_date,
+                bar.contract,
+            )
+
+            self._bar_cache[
+                cache_key
+            ] = bar
+
+    # =====================================================
+    # Single-day lookup
+    # =====================================================
+
+    def get_bar(
+        self,
+        timestamp,
+        contract: OptionContract,
+    ) -> HistoricalOptionBar:
+
+        timestamp = pd.Timestamp(
+            timestamp
+        ).normalize()
+
+        requested_cache_key = (
+            timestamp,
+            contract,
+        )
+
+        # -------------------------------------------------
+        # Cache hit
+        # -------------------------------------------------
+
+        if (
+            requested_cache_key
+            in self._bar_cache
+        ):
+            return self._bar_cache[
+                requested_cache_key
+            ]
+
+        # -------------------------------------------------
+        # Cache miss
+        #
+        # If a backtest range has been configured,
+        # fetch from the requested date through the
+        # backtest end date.
+        #
+        # Otherwise preserve the original single-day
+        # behavior.
+        # -------------------------------------------------
+
+        if self._backtest_end_date is not None:
+            load_end_date = (
+                self._backtest_end_date
+            )
+        else:
+            load_end_date = timestamp
+
+        bars = self.get_bars(
+            contract=contract,
+            start_date=timestamp,
+            end_date=load_end_date,
+        )
+
+        self._cache_bars(
+            bars
+        )
+
+        # -------------------------------------------------
+        # The range may be non-empty while the requested
+        # trading date itself is missing.
+        #
+        # Therefore check the requested cache key rather
+        # than simply checking `bars`.
+        # -------------------------------------------------
+
+        if (
+            requested_cache_key
+            not in self._bar_cache
+        ):
+            raise ValueError(
+                "No historical option bar found "
+                f"for {contract} at {timestamp}"
+            )
+
+        return self._bar_cache[
+            requested_cache_key
+        ]
+
+    # =====================================================
+    # Explicit preload
+    # =====================================================
+
+    def preload(
+        self,
+        contract: OptionContract,
+        start_date,
+        end_date,
+    ) -> list[HistoricalOptionBar]:
+
+        bars = self.get_bars(
+            contract=contract,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        self._cache_bars(
+            bars
+        )
+
+        return bars
