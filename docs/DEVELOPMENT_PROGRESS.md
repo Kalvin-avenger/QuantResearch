@@ -1,274 +1,418 @@
 # Development Progress
 
-**Latest checkpoint:** 2026-08-24  
-**Regression status:** 314 passed, 0 failed
+**Latest checkpoint:** 2026-08-25  
+**Status:** GREEN  
+**Current milestone:** Real Historical Dynamic LEAPS Backtesting Complete
 
-## Completed Foundation
+The repository now contains more than 350 regression and live integration
+tests. Use `pytest -m "not integration"` and `pytest -m integration -v -s`
+for exact local counts.
 
-### Equity Backtesting
+## Foundation — Complete
 
-- Price-series ingestion and validation.
-- Signal enum and moving-average crossover strategy.
-- Equity orders and execution.
-- Position and portfolio accounting.
-- Trade log.
-- Performance metrics including return, CAGR, volatility, Sharpe ratio, and maximum drawdown.
-- Trade analytics.
-- Slippage infrastructure.
+### Equity backtesting
 
-### Options Domain
+- Historical price ingestion
+- Signal-based strategies
+- Moving-average strategy
+- Equity orders and execution
+- Position and portfolio accounting
+- Trade log
+- Performance metrics
+- Trade analytics
+- Slippage infrastructure
 
-- `OptionContract` and option type modeling.
-- Historical option quotes and quote stores.
-- Option positions with weighted-average cost.
-- Unrealized and realized option PnL.
-- Partial and full exits.
-- ATM / nearest-strike and LEAPS-oriented selection infrastructure.
-- Yahoo option-chain ingestion/normalization.
-- Massive historical option-data provider.
-- HTTP pagination behavior.
-- Option order, intent, builder, resolver, execution result, and executor.
+### Options domain
+
+- `OptionContract`
+- Option types
+- Historical option quotes
+- Historical quote store
+- Historical daily option bars
+- Option position accounting
+- Weighted-average cost
+- Unrealized / realized PnL
+- Partial and full exits
+- Option order / intent / resolver / builder / executor
+- Yahoo option-chain normalization
+- Massive option reference / historical data integration
 
 ## Sprint 13 — Option Order & Execution
 
 **Status: COMPLETE**
 
-Established the option execution pipeline:
+Established:
 
-`OptionOrder / OptionOrderIntent -> resolver/builder -> OptionExecutor -> Portfolio / OptionPosition`
+```text
+OptionOrder / OptionOrderIntent
+        ↓
+resolver / builder
+        ↓
+OptionExecutor
+        ↓
+Portfolio / OptionPosition
+```
 
-Important behaviors:
+Validated multiplier-aware cash accounting, weighted-average cost, realized
+PnL, full exits, and position cleanup.
 
-- Buy at ask.
-- Sell at bid.
-- Apply multiplier-aware cash accounting.
-- Preserve realized PnL at portfolio level.
-- Remove option positions after complete exit.
-
-## Sprint 14.1 — SPY + LEAPS Initial Allocation
-
-**Status: COMPLETE**
-
-Implemented the infrastructure required to execute a combined SPY + LEAPS allocation on the same bar.
-
-Key work:
-
-- `EquityOrderIntent`.
-- Multiple explicit instructions per trading day.
-- Same-day cash snapshot so sibling allocations use the same pre-trade cash base.
-- Fixed optional `allocation_base`.
-- Initial SPY + LEAPS end-to-end backtest.
-- Combined equity/option NAV validation.
-
-Example research configuration:
-
-- 25% initial capital SPY.
-- 25% initial capital LEAPS.
-
-## Sprint 14.2 — Drawdown Ladder
+## Sprint 14 — SPY + LEAPS Ladder State Model
 
 **Status: COMPLETE**
 
-Implemented stateful SPY drawdown tracking.
+### 14.1 — Initial SPY + LEAPS allocation
 
-Key work:
+Completed:
 
-- Running peak.
-- Drawdown calculation.
-- Configurable drawdown step.
-- Drawdown level mapping.
-- Floating-point tolerance at exact thresholds.
-- One-time trigger per drawdown level.
-- Reset behavior after a new peak.
-- Configurable `max_tranches`.
-- Fixed initial-capital sizing for ladder tranches.
+- `EquityOrderIntent`
+- multiple same-bar actions
+- same-day cash snapshot
+- fixed `allocation_base`
+- combined equity / option NAV validation
 
-## Sprint 14.3 — Runtime Strategy + LEAPS Take-Profit
+### 14.2 — Drawdown ladder
 
-**Status: COMPLETE**
+Completed:
 
-Added the runtime strategy path required for portfolio-aware decisions.
+- running SPY peak
+- drawdown calculation
+- configurable step
+- drawdown levels
+- exact-threshold tolerance
+- one-time level triggers
+- configurable active capacity
 
-Key work:
+### 14.3 — Runtime strategy and take-profit
 
-- `StrategyContext`.
-- `BacktestEngine` support for `on_bar(timestamp, price, context)`.
-- Preservation of `generate()` and `generate_orders()` paths.
-- Runtime access to cash, option positions, and current option quotes.
-- Pandas `.iloc` compatibility fix for legacy signal Series.
-- `SpyLeapsLadderStrategy.on_bar()`.
-- LEAPS return calculation using current bid versus average cost.
-- Configurable take-profit threshold.
-- Generation of full-position option SELL orders.
-- End-to-end take-profit execution.
-- Full option-position cleanup after exit.
-- Portfolio-level realized option PnL validation.
+Completed:
 
-Example validated scenario:
+- `StrategyContext`
+- `BacktestEngine.on_bar(...)` runtime path
+- quote-aware LEAPS take-profit
+- full-position option exits
+- realized PnL validation
 
-- Buy 10 contracts at ask 25.
-- Sell 10 contracts at bid 32.
-- Proceeds: 32,000.
-- Realized option PnL: 7,000.
-- Closed contract removed from `option_positions`.
+### 14.4 — Independent tranche lifecycle
 
-## Important Bugs / Lessons Captured
+Completed:
 
-- Option position field naming must consistently use the current accounting API (`average_cost`).
-- Massive provider fake HTTP responses must match the production client's expected response interface.
-- Pagination tests should isolate network behavior with fake sessions.
-- Test collection should be scoped to the repository (`pytest tests`) on Windows to avoid unrelated system directories.
-- Historical quote timestamps and trading-date lookups must be normalized consistently.
-- Multiple same-day allocations require a shared pre-trade snapshot.
-- Fixed ladder allocations require an explicit capital base.
-- Exact percentage thresholds require floating-point tolerance.
-- A pandas `Series` with `DatetimeIndex` must use `.iloc` for positional access.
-- After a full option exit, tests must not dereference the deleted position; realized PnL belongs to the portfolio ledger.
+- independent equity and option leg state
+- `SpyLeapsTranche`
+- separate active equity / option capacities
+- option-capacity recycling
+- lifecycle ledger
+- removal of the old combined deployment counter as the primary state source
 
-## Current Architectural Checkpoint
+Important semantic:
 
-The framework now supports:
-
-`Signal strategies + pre-generated order strategies + dynamic runtime strategies`
-
-with both equity and option execution inside the same portfolio.
-
-## Sprint 14.4 — Capital Recycling & Tranche State Model
-
-Status: COMPLETE
-
-Introduced independent equity and option lifecycle state.
-
-Key work:
-
-- `SpyLeapsTranche` lifecycle model.
-- Independent equity and option deployment state.
-- Option-leg closure without closing SPY exposure.
-- Active equity and option tranche counts.
-- Option-capacity recycling after take-profit.
-- Repeated take-profit and recycling cycles.
-
-The tranche ledger replaced the earlier assumption that one combined
-`tranches_deployed` counter could represent the complete strategy
-state.
+```text
+lifecycle ledger count != active capacity
+```
 
 ## Sprint 15 — Dynamic LEAPS Contract Lifecycle
 
-Status: COMPLETE
+**Status: COMPLETE**
 
-### 15.1–15.2 — Contract Resolution
+Completed:
 
-Added fixed and dynamic LEAPS contract resolution.
-
-The strategy can preserve legacy fixed-contract behavior or resolve a
-contract dynamically from timestamp and underlying price.
-
-### 15.3 — Historical Contract Universe
-
-Added the option contract universe abstraction and Massive-backed
-historical contract discovery.
-
-Key work:
-
+- `LeapsContractResolver`
+- fixed resolver
+- dynamic resolver
 - `OptionContractUniverseProvider`
-- `StaticOptionContractUniverseProvider`
-- `MassiveOptionContractUniverseProvider`
-- Massive option-contract reference requests
-- pagination
-- historical `as_of` queries
-- vendor-to-domain contract normalization
+- static provider
+- Massive-backed provider
+- historical `as_of` contract discovery
+- min / max / target DTE
+- nearest-ATM ranking
+- resolved contract stored in tranche state
+- contract rotation
+- simultaneous active option contracts
+- contract-aware take-profit
+- same-contract exit deduplication
+- multiple option SELL orders on the same bar
+- engine-level multiple runtime actions
 
-### 15.3F — Contract Rotation
+## Sprint 16 — Daily Historical Option Integration
 
-Validated that recycled option deployment can resolve to a different
-LEAPS contract from the original deployment.
+**Status: COMPLETE**
 
-Each tranche stores the actual resolved contract.
+The research direction changed from historical intraday quote dependency to
+daily option aggregate bars after live quote retrieval exposed vendor
+entitlement constraints.
 
-### 15.4 — Multi-Contract Take-Profit
+### 16.1 — Daily option domain and pricing
 
-Take-profit decisions now use active tranche contracts rather than a
-single legacy fixed contract.
+Completed:
 
-Key work:
+- `HistoricalOptionBar`
+- Massive option-bar normalization
+- `MassiveHistoricalOptionBarProvider`
+- `DailyOptionPricing`
+- `DailyCloseOptionPricingPolicy`
+- `DailyOptionExecutionQuoteAdapter`
 
-- active-contract discovery
-- contract deduplication
-- aggregated-position-aware SELL generation
-- contract-specific tranche closure
-- multiple simultaneous active LEAPS contracts
-- multiple take-profit orders on the same bar
+Explicit research assumption:
 
-### 15.4C–15.4D — Multi-Order Runtime
+```text
+BUY  = daily close
+SELL = daily close
+MARK = daily close
+```
 
-Validated that runtime strategies can return multiple actions and that
-`BacktestEngine` executes multiple option SELL orders on the same bar.
+No daily close is labeled as a real historical bid or ask.
 
-Portfolio position cleanup, cash accounting, and realized PnL were
-validated through integration tests.
+### 16.2 — BacktestEngine daily market-data path
 
-### 15.4E — Dynamic Lifecycle End-to-End
+Completed:
 
-Validated the complete lifecycle using the real
-`SpyLeapsLadderStrategy` and `BacktestEngine`:
+- unified option market-state resolver
+- daily bars in StrategyContext
+- daily bars in option execution
+- explicit `mark_price`
+- daily bars in EOD option MTM
+- top-level `BacktestEngine.run(...)` integration
+- last-known option mark fallback
+- missing-current-bar semantics
 
-    initial dynamic Contract A
-              ↓
-         drawdown
-              ↓
-      dynamic Contract B
-              ↓
-       A + B active
-              ↓
-    simultaneous take-profit
-              ↓
-       two SELL orders
-              ↓
-       engine execution
-              ↓
-    option positions closed
-              ↓
-      SPY exposure remains
+### 16.3 — Massive reliability and caching
 
-Full regression suite GREEN at the Sprint 15 milestone.
+Completed:
 
-## Current Architectural Checkpoint
+- aggregate endpoint routed through 429 retry / backoff
+- same-day contract cache
+- explicit `preload(...)`
+- automatic range loading
+- `set_backtest_range(...)`
+- range-cache correctness
+- contract-universe query cache
+- integration-test marker
 
-The framework now supports:
+### 16.4 — Real short-window validation
 
-    historical market state
-            ↓
-    runtime strategy
-            ↓
-    dynamic option universe
-            ↓
-    LEAPS contract resolution
-            ↓
-    multi-contract tranche lifecycle
-            ↓
-    multiple runtime orders
-            ↓
-    equity + option execution
-            ↓
-    unified portfolio accounting
+Validated:
+
+- one-day real Massive dynamic LEAPS execution
+- five-day continuous historical backtest
+- one-month real historical backtest
+- automatic contract-range loading without test-side preselection
+- real two-tranche drawdown deployment
+- simultaneous distinct LEAPS positions
+- multi-contract NAV reconciliation
+
+Example two-tranche real window:
+
+```text
+Tranche 1: SPY 2026-06-18 610C
+Tranche 2: SPY 2026-06-18 575C
+```
+
+Both option positions were valued simultaneously and final NAV reconciled
+exactly to:
+
+```text
+cash + SPY market value + all option market values
+```
+
+## Sprint 17 — Real Take-Profit & Recycling Validation
+
+**Status: COMPLETE**
+
+### 17.1 — Real TP discovery
+
+A dynamically selected:
+
+```text
+SPY 2026-06-18 560C
+```
+
+entered on 2025-04-01 at a daily close of 56.25 and first exceeded the 25%
+take-profit threshold on 2025-05-13 at 72.94.
+
+Observed option return:
+
+```text
++29.67%
+```
+
+### 17.2 — Real TP and capacity release
+
+Validated:
+
+- real option SELL
+- `option_closed=True`
+- `option_deployed=False`
+- equity leg remains active
+- active option capacity released
+- realized PnL persisted at portfolio level
+
+Observed realized option PnL in the focused scenario:
+
+```text
+$6,676
+```
+
+### 17.3 — Real later drawdown and redeployment
+
+A post-TP drawdown discovery identified:
+
+```text
+SPY peak date:                 2025-10-29
+SPY peak:                      687.39
+first subsequent 5% drawdown: 2025-11-20
+SPY price:                     652.53
+drawdown:                      -5.07%
+```
+
+The longer live test validated:
+
+- TP of prior option positions
+- released option capacity
+- later drawdown-triggered option redeployment
+- option-only lifecycle tranche when equity capacity was already full
+- contract rotation
+- automatic new-contract range loading
+
+Observed lifecycle example:
+
+```text
+Tranche 1:
+level 0
+SPY 2026-06-18 560C
+equity open
+option closed
+
+Tranche 2:
+level 2
+SPY 2026-06-18 505C
+equity open
+option closed
+
+Tranche 3:
+level 1
+SPY 2027-03-19 655C
+equity not deployed
+option open
+```
+
+This established an important invariant:
+
+```text
+tranches are ordered by lifecycle creation,
+not by drawdown level
+```
+
+## Sprint 18 — Historical Tradability & Full-Year Validation
+
+**Status: COMPLETE**
+
+### 18.1 — Entry-date tradability
+
+A full-year backtest exposed a historically valid contract with no option bar
+on the intended entry date.
+
+Diagnostic example:
+
+```text
+SPY 2026-03-20 585C
+
+2025-01-02:
+no daily aggregate bar
+
+first available bar:
+2025-01-03
+close = 58.82
+volume = 2
+```
+
+This proved:
+
+```text
+contract exists
+    !=
+contract tradable on entry date
+```
+
+Completed:
+
+- `MassiveHistoricalOptionBarProvider.has_bar(...)`
+- resolver `tradability_provider`
+- candidate checking in existing DTE / ATM ranking order
+- skip unavailable entry-date contracts
+- preserve legacy behavior when no tradability provider is supplied
+- no look-ahead substitution with future bars
+
+### 18.2 — Full-year 2025 historical backtest
+
+Validated a full calendar-year dynamic SPY + LEAPS backtest using:
+
+- real Yahoo SPY data
+- real Massive historical contract universes
+- real Massive daily option aggregate bars
+- tradability-aware dynamic resolver
+- automatic contract range loading
+- take-profit
+- option recycling
+- multi-tranche lifecycle
+- contract rotation
+- continuous NAV
+
+Observed result:
+
+```text
+Initial NAV:            $100,000.00
+Ending NAV:             $143,226.34
+Total return:           +43.23%
+Maximum drawdown:       -21.68%
+Minimum NAV:            $86,120.94
+Maximum NAV:            $143,945.44
+Ending cash:            $58,494.14
+Realized option PnL:    $29,304.00
+```
+
+This is a research-validation result, not a future-performance claim.
+
+## Important Engineering Lessons
+
+- Daily bars are not quotes.
+- Contract existence is not tradability.
+- Entry executions must not use future bars.
+- Missing current strategy data should not create synthetic signals.
+- MTM may use a prior valid mark.
+- `get_bar()` and `get_bars()` serve different responsibilities.
+- Range fetches must return the requested date from cache, not `bars[0]`.
+- API retry is a reliability mechanism; range loading is the performance
+  architecture.
+- Provider-level caches should hide HTTP concerns from strategies and engine.
+- Active equity and option capacities are independent.
+- Lifecycle ledger order is not drawdown-level order.
+- Same-contract strategy tranches may aggregate into one portfolio option
+  position.
+- Different contracts must be valued independently.
+- Offline regression and live integration tests should be run separately.
+
+## Current Checkpoint
+
+The historical daily-option architecture is mature enough to support
+explainable research.
+
+The next milestone is visualization and diagnostics rather than another
+market-data architecture change.
 
 ## Next
 
-Sprint 16 — Historical Dynamic LEAPS Validation
+**Sprint 19 — Visualization & Research Diagnostics**
 
-The next objective is to connect historical contract discovery and
-historical option quotes in progressively more realistic backtests.
+Initial targets:
 
-Initial target:
+- NAV visualization
+- SPY benchmark overlay
+- portfolio drawdown chart
+- tranche deployment markers
+- option TP / exit markers
+- option contract rotation timeline
+- active equity / option capacity over time
+- realized option PnL timeline
+- portfolio component attribution
 
-    historical timestamp
-            ↓
-    Massive contract universe
-            ↓
-    DynamicLeapsContractResolver
-            ↓
-    selected SPY LEAPS contract
-            ↓
-    Massive historical quote
-            ↓
-    executable bid / ask
+After the visualization milestone, the next strategy research direction will
+be defined separately.

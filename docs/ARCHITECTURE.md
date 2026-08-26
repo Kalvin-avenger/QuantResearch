@@ -1,124 +1,309 @@
 # Architecture
 
-**Checkpoint:** 2026-08-24  
-**Milestone:** Sprint 15 — Dynamic LEAPS Contract Lifecycle
+**Checkpoint:** 2026-08-25  
+**Milestone:** Real Historical Dynamic LEAPS Backtesting
 
 ## System Overview
 
-QuantResearch separates strategy decisions, instruction resolution,
-execution, portfolio accounting, and market-data access.
-
-The backtest engine supports three strategy interfaces:
-
-1. `generate(prices)` for legacy signal-based strategies.
-2. `generate_orders(prices)` for pre-generated explicit orders or intents.
-3. `on_bar(timestamp, price, context)` for runtime strategies requiring current portfolio state or option quotes.
+QuantResearch separates market data, strategy decisions, instruction
+resolution, execution, portfolio accounting, analytics, and visualization.
 
 ```mermaid
 flowchart TD
-    E[BacktestEngine] --> G1[generate prices]
-    E --> G2[generate_orders prices]
-    E --> OB[on_bar timestamp price context]
-    G1 --> S[Signal]
-    G2 --> I[Explicit Order or Intent]
-    P[Portfolio] --> C[StrategyContext]
-    Q[Current Option Quotes] --> C
-    C --> OB
-    OB --> I
-    S --> EO[Equity Order]
-    I --> ER[EquityInstructionResolver]
-    I --> OR[OptionInstructionResolver]
-    ER --> EO
+    Y[Yahoo SPY Historical Data] --> P[SPY Price Series]
+    P --> E[BacktestEngine]
+
+    E --> C[StrategyContext]
+    C --> S[SpyLeapsLadderStrategy]
+
+    S --> R[DynamicLeapsContractResolver]
+    R --> U[OptionContractUniverseProvider]
+    U --> MU[Massive Historical Contract Universe]
+
+    R --> T{Entry-Date Tradable?}
+    T -->|No| R
+    T -->|Yes| OC[Selected OptionContract]
+
+    OC --> OI[OptionOrderIntent]
+    OI --> OR[OptionInstructionResolver]
     OR --> OO[OptionOrder]
-    EO --> EX[Executor]
-    OO --> OEX[OptionExecutor]
-    EX --> P
-    OEX --> P
-    P --> EP[Equity Position]
-    P --> OP[Option Positions]
-    P --> RP[Realized PnL]
-    OP --> MTM[Option Mark-to-Market]
-    EP --> NAV[Portfolio NAV]
-    MTM --> NAV
-    P --> NAV
+
+    OC --> OBP[MassiveHistoricalOptionBarProvider]
+    OBP --> HB[HistoricalOptionBar]
+    HB --> DP[DailyOptionPricingPolicy]
+    DP --> QA[DailyOptionExecutionQuoteAdapter]
+
+    QA --> OEX[OptionExecutor]
+    OEX --> PF[Portfolio]
+
+    QA --> C
+    QA --> MTM[Option Mark-to-Market]
+    MTM --> PF
+
+    PF --> NAV[Portfolio NAV]
     NAV --> BR[BacktestResult]
+    BR --> V[Visualization / Research Diagnostics]
 ```
 
-## Strategy Interface Selection
+## Strategy Interfaces
 
-`BacktestEngine` selects the most state-aware interface implemented by the strategy.
-
-```mermaid
-flowchart TD
-    A[BacktestEngine.run] --> B{Strategy has on_bar?}
-    B -- Yes --> C[Dynamic Runtime Strategy]
-    B -- No --> D{Strategy has generate_orders?}
-    D -- Yes --> E[Pre-generated Explicit Instructions]
-    D -- No --> F[Legacy Signal Strategy]
-    C --> X[Explicit Execution Path]
-    E --> X
-    F --> Y[Legacy Signal Execution]
-    X --> Z[Portfolio Accounting and EOD NAV]
-    Y --> Z
-```
-
-`on_bar()` has precedence because runtime strategies require current portfolio and market state before making each decision.
-
-## Runtime Strategy Context
-
-Before calling a dynamic strategy, the engine builds a `StrategyContext`.
-
-The context exposes current cash, a copy of current option positions, and current quotes for option contracts held by the portfolio.
-
-Missing current option quotes are allowed. A quote-dependent strategy decision can therefore choose not to act rather than inventing market data.
-
-## Runtime Action Contract
-
-A runtime strategy may return:
-
-- `None`;
-- one order or intent;
-- a `list` or `tuple` containing multiple orders or intents.
-
-`BacktestEngine` normalizes single and multiple actions and executes each action independently. This allows a strategy to enter multiple legs or exit multiple option contracts on the same trading day.
-
-## Same-Day Allocation Semantics
-
-Before executing the current day's instructions, `BacktestEngine` captures a cash snapshot. Allocation-based intents generated for that bar use the same snapshot unless the intent explicitly supplies its own `allocation_base`.
+`BacktestEngine` supports:
 
 ```text
-capital_base =
-    intent.allocation_base
-    if allocation_base is explicitly supplied
-    else engine-provided daily cash snapshot
-
-budget =
-    capital_base * allocation_fraction
+generate(prices)
+generate_orders(prices)
+on_bar(timestamp, price, context)
 ```
 
-This prevents a second same-day allocation from becoming smaller only because an earlier instruction already consumed cash. It also allows fixed-notional ladder tranches to size from the strategy's initial capital.
+The dynamic runtime interface has precedence because it requires current
+portfolio and market state.
 
-## SPY + LEAPS Ladder Strategy
+A runtime strategy can return:
 
-`SpyLeapsLadderStrategy` is a stateful runtime strategy.
+- no action
+- one action
+- multiple same-bar actions
 
-Its responsibilities include:
+## Market-Data Layers
 
-- maintaining the running SPY peak;
-- calculating drawdown levels;
-- deploying equity and option legs;
-- tracking tranche lifecycle state;
-- resolving LEAPS contracts at deployment time;
-- evaluating contract-specific take-profit conditions;
-- recycling released option capacity.
+### Equity data
 
-The strategy supports both fixed and dynamic LEAPS contract resolution.
+Real historical SPY data currently comes from Yahoo Finance.
 
-## Tranche Lifecycle Model
+The engine consumes a `pd.Series` of daily prices and remains independent of
+the download provider.
 
-Strategy lifecycle state is represented by `SpyLeapsTranche`.
+### Option reference data
 
-Each tranche stores:
+Historical option contract discovery is provided through:
+
+```text
+MassiveHttpClient
+        ↓
+MassiveOptionContractUniverseProvider
+        ↓
+OptionContract
+```
+
+The resolver never consumes vendor dictionaries directly.
+
+### Option daily aggregates
+
+Daily option history uses:
+
+```text
+MassiveHttpClient.get_aggregate_bars(...)
+        ↓
+normalize_massive_option_bar(...)
+        ↓
+HistoricalOptionBar
+```
+
+`HistoricalOptionBar` contains:
+
+```text
+contract
+timestamp
+open
+high
+low
+close
+volume
+vwap
+```
+
+## Daily Pricing Boundary
+
+Daily bars do not contain true bid/ask quotes.
+
+QuantResearch therefore inserts an explicit research-policy layer:
+
+```mermaid
+flowchart LR
+    B[HistoricalOptionBar] --> P[DailyOptionPricingPolicy]
+    P --> D[DailyOptionPricing]
+    D --> A[DailyOptionExecutionQuoteAdapter]
+    A --> X[Existing Execution Interface]
+```
+
+Current default policy:
+
+```text
+BUY  = close
+SELL = close
+MARK = close
+```
+
+The adapter is a compatibility boundary. Its `bid` / `ask` attributes are
+execution proxies, not claims about historical quoted markets.
+
+## Unified Option Market-State Resolution
+
+`BacktestEngine` resolves option market state through one internal path.
+
+```mermaid
+flowchart TD
+    R[_resolve_option_market_quote] --> Q{Legacy quote provider?}
+    Q -->|Yes| L[Historical quote]
+    Q -->|No| B{Daily bar provider?}
+    B -->|Yes| HB[HistoricalOptionBar]
+    HB --> PP[Pricing Policy]
+    PP --> AD[Execution Quote Adapter]
+    B -->|No| ERR[Explicit failure]
+
+    L --> CTX[StrategyContext]
+    AD --> CTX
+    L --> EX[Execution]
+    AD --> EX
+    L --> M[MTM]
+    AD --> M
+```
+
+This keeps strategy and execution independent from the underlying market-data
+frequency.
+
+## Dynamic LEAPS Resolution
+
+The resolver currently applies:
+
+```text
+CALL only
+365 <= DTE <= 548
+target DTE = 456
+```
+
+Ranking priority:
+
+1. distance from target DTE
+2. strike distance from current underlying price
+3. expiration date
+4. strike
+
+### Tradability-aware resolution
+
+Historical reference availability is not enough.
+
+A candidate must also have an entry-date daily option bar.
+
+```mermaid
+flowchart TD
+    U[Eligible Historical Contracts] --> R[Rank by Existing DTE / ATM Policy]
+    R --> C1[Candidate 1]
+    C1 --> H1{has_bar on entry date?}
+    H1 -->|Yes| S[Select Candidate]
+    H1 -->|No| C2[Candidate 2]
+    C2 --> H2{has_bar on entry date?}
+    H2 -->|Yes| S
+    H2 -->|No| CN[Continue Ranked Candidates]
+    CN --> N[No Tradable LEAPS Found]
+```
+
+The tradability provider is optional so existing static and legacy behavior
+remains backward compatible.
+
+## Option-Bar Provider
+
+`MassiveHistoricalOptionBarProvider` has distinct responsibilities.
+
+### `get_bars(...)`
+
+Retrieve and normalize a date range.
+
+### `get_bar(...)`
+
+Engine-facing single-date lookup.
+
+### `has_bar(...)`
+
+Entry-date tradability probe. It intentionally requests only the requested
+day and does not auto-load the full remaining backtest window.
+
+### `preload(...)`
+
+Explicit range fetch and cache population.
+
+### `set_backtest_range(...)`
+
+Configure automatic remaining-window loading.
+
+## Automatic Range Loading
+
+```mermaid
+flowchart TD
+    G[get_bar timestamp contract] --> C{Cache hit?}
+    C -->|Yes| R[Return cached bar]
+    C -->|No| F[Fetch timestamp to backtest end]
+    F --> N[Normalize returned bars]
+    N --> W[Write each trading day to cache]
+    W --> K{Requested day exists in cache?}
+    K -->|Yes| R
+    K -->|No| E[Raise No historical option bar]
+```
+
+This design means a new dynamically selected contract normally performs one
+remaining-range HTTP request, after which daily engine lookups are cache
+reads.
+
+## Contract Universe Cache
+
+`MassiveOptionContractUniverseProvider` caches identical historical queries
+using normalized:
+
+```text
+timestamp
+expiration_date_gte
+expiration_date_lte
+```
+
+A provider instance is bound to one underlying.
+
+This avoids repeated contract reference calls when tests or strategies resolve
+the same historical universe more than once.
+
+## HTTP Reliability
+
+Massive HTTP calls use a shared retry / backoff helper for 429 responses.
+
+Retry behavior:
+
+- respect `Retry-After` when supplied
+- exponential backoff otherwise
+- print retry progress
+- eventually raise if retry capacity is exhausted
+
+Retry is a reliability mechanism. Caching / range loading is the main
+historical-backtest efficiency mechanism.
+
+## StrategyContext
+
+Before `on_bar(...)`, the engine builds a context containing:
+
+- current cash
+- copied option positions
+- current option market-state adapters
+
+Current missing data is allowed. A quote-dependent decision can skip rather
+than inventing market state.
+
+## SPY + LEAPS Ladder
+
+`SpyLeapsLadderStrategy` owns strategy-state transitions.
+
+Responsibilities:
+
+- running peak
+- drawdown levels
+- equity deployment
+- option deployment
+- dynamic contract resolution
+- take-profit detection
+- option-capacity release
+- later recycling
+- lifecycle ledger updates
+
+## Tranche Lifecycle
+
+`SpyLeapsTranche` stores:
 
 ```text
 level
@@ -128,300 +313,189 @@ option_closed
 option_contract
 ```
 
-Equity and option state are deliberately independent. Closing a LEAPS position does not automatically close the SPY leg, making option capital recycling possible.
+Equity and option lifecycle states are independent.
 
-## LEAPS Contract Resolution
-
-Contract selection is delegated to `LeapsContractResolver`.
-
-```mermaid
-flowchart TD
-    A[SpyLeapsLadderStrategy] --> B[LeapsContractResolver]
-    B --> C[FixedLeapsContractResolver]
-    B --> D[DynamicLeapsContractResolver]
-    C --> E[Configured OptionContract]
-    D --> F[OptionContractUniverseProvider]
-    F --> G[Historical Contract Universe]
-    G --> H[CALL Filter]
-    H --> I[DTE Range Filter]
-    I --> J[Target DTE Ranking]
-    J --> K[Nearest ATM Ranking]
-    K --> L[Resolved OptionContract]
-    E --> L
-```
-
-### Fixed Resolver
-
-`FixedLeapsContractResolver` preserves legacy fixed-contract behavior by always returning the configured contract.
-
-### Dynamic Resolver
-
-`DynamicLeapsContractResolver` obtains contracts from an `OptionContractUniverseProvider`.
-
-Current default LEAPS parameters are:
+Example:
 
 ```text
-minimum DTE = 365 days
-maximum DTE = 548 days
-target DTE  = 456 days
+Tranche A:
+equity_deployed = True
+option_closed   = True
+
+Later:
+equity capacity = full
+option capacity = available
+
+New lifecycle tranche:
+equity_deployed = False
+option_deployed = True
 ```
 
-Eligible contracts must be CALL options within the configured DTE range. Selection prioritizes distance from target DTE, distance between strike and current underlying price, expiration date, and strike.
+## Active Capacity
 
-## Option Contract Universe
+`max_tranches` represents active capacity, not lifetime lifecycle records.
 
-Contract discovery is separated from contract selection.
-
-`OptionContractUniverseProvider` defines the abstraction used by the dynamic resolver. Current implementations include:
-
-- `StaticOptionContractUniverseProvider`
-- `MassiveOptionContractUniverseProvider`
-
-The Massive-backed provider retrieves historical contract reference data and normalizes vendor records into internal `OptionContract` objects. The strategy itself remains vendor-independent.
-
-## Massive Option Data Boundary
-
-Massive-specific HTTP access and normalization live in the data provider layer.
+Important invariants:
 
 ```text
-Historical contract discovery
-    → MassiveOptionContractUniverseProvider
-    → OptionContract
+active_equity_tranches
+    == number of tranches with equity_deployed=True
 
-Historical quote retrieval
-    → MassiveHistoricalOptionDataProvider
-    → HistoricalOptionQuote
+active_option_tranches
+    == number of currently deployed / open option legs
 ```
 
-This separation allows strategy and execution layers to operate on internal domain objects rather than vendor response dictionaries.
+Both must remain `<= max_tranches`.
 
-## Dynamic LEAPS Deployment Flow
+The `tranches` list is ordered by lifecycle creation, not by `level`.
 
-```mermaid
-flowchart TD
-    A[SPY Market Bar] --> B[SpyLeapsLadderStrategy]
-    B --> C{Option Capacity Available?}
-    C -- No --> D[Continue Without New Option Deployment]
-    C -- Yes --> E[Resolve LEAPS Contract]
-    E --> F[OptionContractUniverseProvider]
-    F --> G[Historical Option Universe]
-    G --> H[DynamicLeapsContractResolver]
-    H --> I[CALL and DTE Filtering]
-    I --> J[Target DTE and ATM Ranking]
-    J --> K[Resolved OptionContract]
-    K --> L[OptionOrderIntent]
-    K --> M[SpyLeapsTranche.option_contract]
-    L --> N[BacktestEngine]
-    N --> O[OptionInstructionResolver]
-    O --> P[OptionOrder]
-    P --> Q[OptionExecutor]
-    Q --> R[Portfolio]
-```
-
-The exact contract selected at deployment time is stored in the tranche lifecycle ledger. Later exit decisions therefore do not need to depend on the original legacy `self.leaps_contract`.
-
-## Drawdown and Capital Recycling
-
-The ladder tracks the running SPY peak and converts drawdown depth into trigger levels. When a new drawdown level is reached, equity and option capacity are evaluated independently.
-
-A previous option take-profit can release option capacity while its corresponding equity exposure remains active. A later drawdown may therefore deploy an option without requiring a new equity leg, and the new option may resolve to a different contract.
+Therefore a real lifecycle can appear as:
 
 ```text
-Earlier lifecycle:
-
-Tranche 0
-    SPY        OPEN
-    Contract A CLOSED
-
-Later drawdown:
-
-Tranche 2
-    SPY        NONE
-    Contract B OPEN
+level 0
+level 2
+level 1
 ```
 
-## Multi-Contract Take-Profit
+without violating the strategy model.
 
-Take-profit decisions are based on active contracts recorded in the tranche ledger.
-
-Identical contracts are deduplicated because several strategy tranches may correspond to one aggregated portfolio `OptionPosition`.
-
-```mermaid
-flowchart TD
-    A[Tranche Lifecycle Ledger] --> B[Collect Active Option Contracts]
-    B --> C[Deduplicate Contracts]
-    C --> D[Lookup Portfolio OptionPosition]
-    D --> E[Lookup Current Historical Quote]
-    E --> F{Position and Quote Available?}
-    F -- No --> G[Skip Contract]
-    F -- Yes --> H[Calculate Bid Return]
-    H --> I{Return >= Take-Profit Threshold?}
-    I -- No --> J[Keep Contract Active]
-    I -- Yes --> K[Generate OptionOrder SELL]
-    K --> L[Close Matching Tranche Option Legs]
-    L --> M[Return SELL Order Collection]
-```
-
-Multiple different contracts may reach the take-profit threshold on the same bar. In that case, `SpyLeapsLadderStrategy.on_bar()` returns multiple `OptionOrder` objects and `BacktestEngine` executes them sequentially.
-
-## Tranche State vs Portfolio State
-
-The tranche ledger and portfolio positions serve different purposes.
+## Portfolio State vs Strategy State
 
 ```text
 Strategy layer
     SpyLeapsTranche
-        → lifecycle history
-        → deployment capacity
-        → contract ownership
+        lifecycle history
+        capacity state
+        resolved contract
 
 Portfolio layer
     OptionPosition
-        → aggregated quantity
-        → average cost
-        → realized/unrealized PnL
+        aggregated quantity
+        weighted average cost
+        financial PnL
 ```
 
-Multiple active tranches may reference the same `OptionContract`, while the portfolio aggregates those holdings into one `OptionPosition`. Therefore the same contract produces one aggregated exit order, while different contracts can produce independent exits.
+Several tranches may reference one contract while the portfolio owns one
+aggregated `OptionPosition`.
 
-## Option Execution Lifecycle
+Different contracts are valued independently.
 
-Option execution uses executable market sides:
-
-- BUY at ask;
-- SELL at bid.
+## Take-Profit Lifecycle
 
 ```mermaid
 flowchart TD
-    A[OptionOrderIntent BUY] --> B[Resolve Quantity]
-    B --> C[OptionOrder BUY]
-    C --> D[Execute at Ask]
-    D --> E[Create or Update OptionPosition]
-    E --> F[Weighted Average Cost]
-    F --> G[Daily Mark-to-Market at Bid]
-    G --> H{Take-Profit Triggered?}
-    H -- No --> G
-    H -- Yes --> I[OptionOrder SELL]
-    I --> J[Execute at Bid]
-    J --> K[Calculate Realized PnL]
-    K --> L[Add Sale Proceeds to Cash]
-    K --> M[Update Portfolio Realized PnL]
-    L --> N{Position Quantity Zero?}
-    M --> N
-    N -- Yes --> O[Remove OptionPosition]
-    N -- No --> E
+    T[Active Tranche Contracts] --> D[Deduplicate Contracts]
+    D --> P[Find Portfolio OptionPosition]
+    P --> Q[Current Market State]
+    Q --> R[Calculate Option Return]
+    R --> TP{Return >= TP threshold?}
+    TP -->|No| K[Keep Open]
+    TP -->|Yes| S[Generate Full SELL]
+    S --> E[OptionExecutor]
+    E --> A[Portfolio Accounting]
+    A --> C[Remove Closed OptionPosition]
+    C --> L[Mark Matching Option Legs Closed]
+    L --> F[Release Active Option Capacity]
 ```
 
-## Missing Quote Semantics
+A later drawdown may consume released option capacity even when no equity
+capacity is available.
 
-Strategy decision-making and portfolio valuation intentionally use different missing-data behavior.
+## Missing-Data Semantics
 
-For runtime strategy decisions, missing current quotes are not invented or forward-filled. Quote-dependent decisions such as take-profit are skipped for that contract.
+### Entry selection
 
-For end-of-day valuation, if an open position does not have a current quote but a previous valid mark exists, the engine may use the last known option mark.
+No entry-day bar means the contract is not tradable for that historical
+entry. Do not use a future bar.
 
-This prevents a stale quote from silently triggering a strategy decision while still allowing portfolio NAV calculation when historical quote data is sparse.
+### Strategy decisions
 
-## SPY + Dynamic LEAPS End-to-End Lifecycle
+No current market state means quote-dependent decisions are skipped.
 
-```mermaid
-flowchart TD
-    A[Initial SPY Bar] --> B[Resolve Contract A]
-    B --> C[Deploy Initial SPY + Contract A]
-    C --> D[Record Contract A in Tranche]
-    D --> E[SPY Drawdown]
-    E --> F[Evaluate Independent Capacity]
-    F --> G[Resolve Contract B]
-    G --> H[Deploy New Tranche with Contract B]
-    H --> I[Contract A and Contract B Active]
-    I --> J[Read Current Quotes]
-    J --> K[Evaluate Take-Profit per Unique Contract]
-    K --> L{Multiple Contracts Trigger?}
-    L -- No --> M[Generate Matching SELL Order]
-    L -- Yes --> N[Generate Multiple SELL Orders]
-    M --> O[BacktestEngine]
-    N --> O
-    O --> P[Execute Each Option SELL]
-    P --> Q[Update Cash and Realized PnL]
-    Q --> R[Remove Closed Option Positions]
-    R --> S[Close Matching Tranche Option Legs]
-    S --> T[SPY Legs Remain Active]
-    T --> U[Option Capacity Available for Recycling]
+### Portfolio valuation
+
+If a current bar is missing but a previous valid mark exists, the engine may
+use the last known mark.
+
+If no historical mark exists, valuation fails explicitly.
+
+## Real Historical Validation
+
+The architecture has been exercised against real Yahoo / Massive data for:
+
+- one-day execution
+- five-day MTM
+- one month
+- real two-tranche drawdown
+- multi-contract portfolio valuation
+- real TP
+- option-capacity release
+- later option-only redeployment
+- contract rotation
+- full calendar-year 2025 backtest
+
+Full-year 2025 validation snapshot:
+
+```text
+Initial NAV:            $100,000.00
+Ending NAV:             $143,226.34
+Total return:           +43.23%
+Maximum drawdown:       -21.68%
+Realized option PnL:    $29,304.00
 ```
-
-This lifecycle has been validated through integration tests using the real `SpyLeapsLadderStrategy`, `BacktestEngine`, option execution, and portfolio accounting.
 
 ## Architectural Invariants
 
-### Strategy and execution remain separate
+### Strategy and execution are separate
 
-Strategies generate decisions. Resolvers translate allocation intents into executable orders. Executors determine execution prices. Portfolio objects own accounting state.
+Strategies make decisions. Resolvers size / select. Executors execute.
+Portfolio objects account.
 
-### Vendor data does not enter strategy logic directly
+### Vendor data is isolated
 
-Massive-specific response structures are normalized in the data layer. Strategies and resolvers operate on internal domain objects.
+Yahoo and Massive details stay in the data layer.
 
-### Tranche state is not portfolio accounting
+### Contract existence is not tradability
 
-Tranches represent strategy lifecycle state. `OptionPosition` represents financial position state.
+Reference availability must not be confused with a tradeable daily bar.
 
-### Same contract means one aggregated exit
+### Daily bars are not quotes
 
-If multiple tranches reference the same active option contract, the strategy generates one exit for the aggregated portfolio position.
+Execution proxies are explicit policy outputs.
 
-### Different contracts may exit together
+### Execution price and mark price are separate
 
-If multiple distinct active contracts independently reach take-profit, they may generate multiple SELL orders on the same bar.
+The engine supports an explicit mark when available.
 
-### Strategy decisions do not use synthetic current quotes
+### Lifecycle state is not portfolio accounting
 
-Missing current quotes cause quote-dependent decisions to be skipped. Portfolio valuation may separately use a previous valid mark.
+Tranches and financial positions answer different questions.
 
-### Legacy interfaces remain supported
+### Missing current data must not create future knowledge
 
-The framework continues to support signal strategies, pre-generated-order strategies, and fixed-contract LEAPS behavior alongside the dynamic runtime architecture.
+Do not use later option bars to fill an entry execution.
 
-## Current Architectural Boundary
+### Active capacity is not lifetime deployment count
 
-Sprint 15 resolves the earlier tranche-state limitation.
+Historical lifecycle records may exceed `max_tranches`.
 
-The framework now supports:
+## Next Architectural Layer
 
-- independent equity and option lifecycle state;
-- option capital recycling;
-- dynamic historical LEAPS contract selection;
-- contract rotation across recycling cycles;
-- simultaneous active option contracts;
-- contract-aware take-profit;
-- same-contract exit deduplication;
-- multiple option exits on the same bar;
-- engine-level multi-order execution;
-- portfolio accounting for those executions.
+The next layer is not another market-data abstraction.
 
-The next architectural boundary is historical data validation rather than strategy-state representation.
+It is a visualization / research-diagnostics layer consuming `BacktestResult`,
+strategy lifecycle state, and portfolio history to make strategy behavior
+explainable.
 
-Sprint 16 should progressively validate:
+Initial targets:
 
 ```text
-historical timestamp
-        ↓
-historical SPY price
-        ↓
-Massive historical option universe
-        ↓
-DynamicLeapsContractResolver
-        ↓
-selected OptionContract
-        ↓
-Massive historical option quote
-        ↓
-executable bid / ask
-        ↓
-SpyLeapsLadderStrategy
-        ↓
-BacktestEngine
-        ↓
-Portfolio and performance results
+NAV
+SPY benchmark
+drawdown
+tranche events
+option lifecycle
+capacity utilization
+contract rotation
+realized PnL
 ```
-
-The first objective should be a small historical smoke test before attempting multi-month or multi-year dynamic LEAPS backtests.

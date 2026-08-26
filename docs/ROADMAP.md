@@ -1,282 +1,346 @@
 # Roadmap
 
-**Checkpoint:** 2026-08-24
+**Checkpoint:** 2026-08-25
 
 ## Current Milestone
 
-### Sprint 15 — Dynamic LEAPS Contract Lifecycle
+### Sprint 18 — Real Historical Dynamic LEAPS Validation
 
 **Status: COMPLETE**
 
-Sprint 15 completed the transition from a fixed-contract SPY + LEAPS
-ladder to a dynamic, tranche-aware, multi-contract lifecycle.
+QuantResearch now supports and has live-tested:
 
-Completed capabilities include:
+- real Yahoo SPY history
+- real Massive historical option universes
+- daily historical option aggregate bars
+- explicit daily option pricing
+- automatic option range loading
+- provider caching
+- 429 retry / backoff
+- dynamic DTE / ATM LEAPS selection
+- entry-date tradability filtering
+- multiple active option contracts
+- independent equity / option tranche capacity
+- take-profit
+- option-capacity recycling
+- contract rotation
+- full-year historical execution
 
-- independent equity and option tranche state;
-- option capital recycling after take-profit;
-- tranche lifecycle bookkeeping;
-- fixed and dynamic LEAPS contract resolvers;
-- historical option contract universe abstraction;
-- static and Massive-backed contract universe providers;
-- historical `as_of` contract discovery;
-- configurable minimum, maximum, and target DTE;
-- CALL filtering and nearest-ATM strike selection;
-- contract rotation across recycling cycles;
-- tranche-level resolved contract tracking;
-- simultaneous active LEAPS contracts;
-- contract-aware take-profit;
-- same-contract exit deduplication;
-- multiple runtime actions on the same bar;
-- engine execution of multiple option SELL orders;
-- end-to-end dynamic multi-contract lifecycle validation.
+Full-year 2025 validation snapshot:
 
-The major strategy-state questions originally planned for Sprint 14.4
-and the dynamic-selection work originally planned for Sprint 14.5 have
-therefore been resolved.
+```text
+Initial NAV:            $100,000.00
+Ending NAV:             $143,226.34
+Total return:           +43.23%
+Maximum drawdown:       -21.68%
+Realized option PnL:    $29,304.00
+```
 
-## Sprint 16 — Historical Dynamic LEAPS Validation
+This is a historical research result, not a forecast or investment claim.
 
-The next phase moves from architecture and lifecycle correctness toward
-validation with real historical option universes and quotes.
+## Completed Development Sequence
 
-The development sequence should remain incremental. A small historical
-data smoke test should pass before attempting long backtests.
+### Sprints 1–13 — Core Backtesting Foundation
 
-### Sprint 16.1 — Historical Data Smoke Test
+Completed:
+
+- equity data
+- strategy interfaces
+- signals
+- orders
+- execution
+- portfolio accounting
+- performance analytics
+- trade analytics
+- option domain
+- option execution
+- historical option infrastructure
+
+### Sprint 14 — Stateful SPY + LEAPS Ladder
+
+Completed:
+
+- initial combined allocation
+- drawdown ladder
+- runtime strategy context
+- take-profit
+- independent equity / option tranche state
+- option-capacity recycling
+
+### Sprint 15 — Dynamic LEAPS Lifecycle
+
+Completed:
+
+- dynamic contract resolver
+- historical universe provider
+- DTE / ATM selection
+- contract rotation
+- multi-contract state
+- multiple same-bar option exits
+
+### Sprint 16 — Daily Historical Option Pipeline
+
+Completed:
+
+- `HistoricalOptionBar`
+- Massive daily aggregates
+- daily pricing policy
+- execution compatibility adapter
+- BacktestEngine daily path
+- mark-price separation
+- missing-bar semantics
+- provider cache
+- range preload
+- automatic range loading
+- contract-universe cache
+- 429 resilience
+
+### Sprint 17 — Real TP & Recycling Validation
+
+Completed:
+
+- real TP event discovery
+- real TP execution
+- option capacity release
+- later drawdown discovery
+- option redeployment
+- option-only lifecycle tranche
+- real contract rotation
+
+### Sprint 18 — Tradability & Long-Horizon Validation
+
+Completed:
+
+- entry-date `has_bar(...)`
+- tradability-aware dynamic resolver
+- no-look-ahead entry semantics
+- full-year 2025 backtest
+- long-horizon lifecycle / accounting validation
+
+# Sprint 19 — Visualization & Research Diagnostics
 
 **Status: NEXT**
 
-Goal: connect historical contract discovery and historical quote
-retrieval for one real historical SPY date.
+Goal: make the strategy visually explainable before changing strategy logic.
 
-Target pipeline:
+## 19.1 — Core Backtest Visualization
+
+Build reusable plotting functions for:
+
+- portfolio NAV
+- SPY price
+- normalized SPY benchmark
+- strategy vs SPY cumulative return
+- portfolio drawdown
+
+Target inputs should be stable research objects such as:
 
 ```text
-historical timestamp
-        ↓
-historical SPY price
-        ↓
-MassiveOptionContractUniverseProvider
-        ↓
-historical option universe
-        ↓
-DynamicLeapsContractResolver
-        ↓
-selected SPY LEAPS contract
-        ↓
-MassiveHistoricalOptionDataProvider
-        ↓
-historical bid / ask quote
-        ↓
-executable option market data
+BacktestResult
+price Series
+timestamps
 ```
 
-Success criteria:
+Avoid embedding plotting logic inside `BacktestEngine`.
 
-- historical SPY price is available for the selected date;
-- Massive returns a historical SPY option contract universe;
-- the resolver selects an eligible CALL contract;
-- selected DTE satisfies the configured LEAPS range;
-- strike selection is consistent with the current SPY price;
-- the selected internal `OptionContract` maps correctly to a Massive
-  option ticker;
-- historical quote retrieval succeeds for the selected contract;
-- usable bid and ask values are available;
-- timestamps are aligned without introducing look-ahead data;
-- failures caused by unavailable vendor data are explicit rather than
-  silently replaced with synthetic data.
+## 19.2 — Strategy Event Visualization
 
-The first implementation should be a focused smoke test or research
-script rather than a long-running backtest.
+Visualize lifecycle events:
 
-### Sprint 16.2 — Short-Window Dynamic Backtest
+- initial tranche deployment
+- drawdown-triggered deployments
+- equity-only deployment
+- option-only recycled deployment
+- option take-profit
+- contract close
+- contract rotation
 
-Goal: run the real `SpyLeapsLadderStrategy` through a small historical
-window using dynamic contract selection and historical option quotes.
+Potential representation:
 
-Initial target window:
+```text
+SPY price chart
+    + vertical event markers
+    + lifecycle labels
+```
 
-- several trading days to several weeks.
+## 19.3 — Option Lifecycle Visualization
 
-Validation targets:
+Add views for:
 
-- initial dynamic LEAPS deployment;
-- historical quote retrieval for open option positions;
-- SPY and option timestamp alignment;
-- end-of-day option mark-to-market;
-- portfolio NAV consistency;
-- tranche lifecycle consistency;
-- explicit handling of missing option quotes;
-- reproducible results for the same stored inputs.
+- contract entry / exit dates
+- entry strike
+- underlying price at entry
+- DTE at entry
+- option holding period
+- realized PnL
+- open / closed status
+- contract rotation timeline
 
-A short window should be used to expose integration problems before
-adding caching, optimization, or long-horizon research complexity.
+## 19.4 — Capacity Visualization
 
-### Sprint 16.3 — Historical Data Robustness
+Plot:
 
-Goal: make historical option retrieval reliable enough for repeated
-research runs.
+```text
+active equity tranches over time
+active option tranches over time
+cash utilization
+equity exposure
+option notional / market value
+```
 
-Work items may include:
+This should make the independent-capacity design observable.
 
-- trading-date and quote alignment;
-- quote availability diagnostics;
-- contract-universe availability diagnostics;
-- pagination validation;
-- rate-limit-aware retrieval;
-- request retry policy;
-- deterministic caching;
-- reproducible stored historical datasets;
-- clear separation between provider integration tests and live-data
-  experiments.
+## 19.5 — Performance Dashboard
 
-Missing-data behavior should remain explicit.
+Combine research diagnostics into a compact summary:
 
-Strategy decisions should not silently use synthetic or forward-filled
-current option quotes.
+- total return
+- CAGR
+- annualized volatility
+- Sharpe ratio
+- maximum drawdown
+- realized option PnL
+- SPY benchmark return
+- lifecycle event count
+- take-profit count
+- contract rotation count
+- capital utilization
 
-### Sprint 16.4 — Multi-Month Dynamic Backtest
+The first implementation can remain matplotlib / Python based. A web UI is
+not required for this milestone.
 
-Goal: extend the validated short-window pipeline to several months.
+# Sprint 20 — Strategy Research Definition
 
-Focus areas:
+**Status: PLANNED**
 
-- repeated contract resolution;
-- multiple drawdown deployments;
-- contract rotation;
-- take-profit and capital recycling;
-- simultaneous active contracts;
-- option quote coverage through time;
-- expiration transitions;
-- missing-contract behavior;
-- portfolio accounting over repeated option lifecycles.
+After visualization is usable, define the next strategy hypothesis.
 
-Diagnostics should record enough information to explain every dynamic
-contract selection and exit.
+The next strategy should be discussed and specified before implementation.
 
-### Sprint 16.5 — Multi-Year Backtest
+Before coding, document:
 
-Goal: run the complete SPY + dynamic LEAPS strategy over a multi-year
-historical period after data reliability has been established.
+```text
+economic / behavioral hypothesis
+entry logic
+exit logic
+capital allocation
+risk constraints
+required market data
+benchmark
+success criteria
+failure criteria
+```
 
-Core performance outputs:
+Do not combine several new ideas into one first experiment.
 
-- total return;
-- CAGR;
-- annualized volatility;
-- Sharpe ratio;
-- maximum drawdown;
-- realized option PnL;
-- unrealized option PnL;
-- SPY contribution;
-- option contribution;
-- capital utilization.
+# Sprint 21 — Performance & Benchmark Analytics
 
-Strategy-specific diagnostics:
+**Status: PLANNED**
 
-- number of tranche deployments;
-- number of option-only recycled deployments;
-- number of LEAPS contract rotations;
-- take-profit frequency;
-- average option holding period;
-- option win rate;
-- average DTE at entry;
-- average strike distance from spot at entry.
+Integrate existing analytics directly with real historical dynamic LEAPS
+results.
 
-## Sprint 17 — Strategy Analytics and Benchmarking
+Targets:
 
-After the historical dynamic pipeline is reliable, add research outputs
-tailored to the hybrid SPY + LEAPS strategy.
+- total return
+- CAGR
+- volatility
+- Sharpe
+- maximum drawdown
+- SPY benchmark comparison
+- excess return
+- component attribution
+- realized vs unrealized option PnL
+- capital utilization
 
-Planned work:
+Visualization and analytics should share common result structures rather than
+duplicate metric calculations.
 
-- SPY benchmark comparison;
-- buy-and-hold comparison;
-- exposure over time;
-- equity versus option contribution;
-- realized versus unrealized PnL;
-- portfolio and component drawdowns;
-- tranche entry and exit history;
-- option holding-period analysis;
-- option win/loss distribution;
-- capital utilization;
-- dynamic contract-selection diagnostics.
+# Sprint 22 — Research Experiment Framework
 
-The objective is to make strategy behavior explainable rather than
-reporting only final performance statistics.
+**Status: PLANNED**
 
-## Sprint 18 — Research Experiments
-
-Once execution semantics and historical data quality are stable,
-evaluate strategy sensitivity.
+Once visualization and analytics are stable, support structured parameter
+experiments.
 
 Potential experiments:
 
-- drawdown-step sweeps;
-- take-profit thresholds such as 20%, 25%, and 30%;
-- equity/option allocation combinations;
-- minimum, maximum, and target DTE sensitivity;
-- ATM versus near-ATM strike-selection rules;
-- maximum tranche sensitivity;
-- option slippage and spread stress tests;
-- transaction-cost sensitivity;
-- walk-forward evaluation;
-- out-of-sample evaluation;
-- market-regime analysis.
+- drawdown step
+- take-profit threshold
+- equity / option allocation mix
+- min / max / target DTE
+- ATM vs near-ATM
+- max active tranches
+- slippage assumptions
+- transaction-cost assumptions
 
-Parameter research should follow, not precede, historical data and
-execution validation.
+Research methodology:
 
-## Later Strategy Extensions
+- explicit hypothesis first
+- fixed benchmark
+- in-sample / out-of-sample separation
+- avoid selecting a strategy only from the best historical result
+- record all tested parameter combinations
 
-Potential strategy work after the baseline dynamic LEAPS research
-pipeline is validated:
+# Sprint 23 — Robustness & Realism
 
-- delta-based contract selection;
-- liquidity-aware contract selection;
-- open-interest and volume filters;
-- volatility-aware option allocation;
-- dynamic take-profit thresholds;
-- expiration-management rules;
-- explicit LEAPS roll logic;
-- risk-budget-based tranche sizing;
-- volatility-regime-dependent drawdown levels.
+**Status: LATER**
 
-These extensions should be introduced individually with tests rather
-than bundled into the baseline strategy.
+Potential additions:
 
-## Later Engineering
+- option commissions
+- option slippage / spread stress
+- liquidity thresholds
+- minimum volume / open-interest filters
+- expiration-management rules
+- explicit roll logic
+- dividend / corporate-action handling
+- alternative daily execution policies
+- sensitivity to missing option bars
 
-Potential engineering work after research behavior is stable:
+# Later Strategy Extensions
 
-- option commission model;
-- more realistic liquidity and fill assumptions;
-- configurable option slippage models;
-- corporate actions and dividends;
-- multiple underlyings;
-- portfolio-level risk constraints;
-- persistent trade and event ledger;
-- experiment configuration objects;
-- result serialization;
-- historical dataset management;
-- CI workflow;
-- packaging and public API cleanup.
+Potential ideas to evaluate individually:
 
-## Non-Goals for the Current Phase
+- delta-based contract selection
+- liquidity-aware contract selection
+- volatility-aware option allocation
+- dynamic take-profit thresholds
+- risk-budget-based tranche sizing
+- volatility-regime-dependent drawdown levels
+- defensive option overlays
+- alternative underlying / LEAPS combinations
 
-The project is not currently intended to be:
+These should be introduced one hypothesis at a time.
 
-- a live trading system;
-- a broker integration;
-- a low-latency execution engine;
-- an investment recommendation system.
+# Later Engineering
 
-The current priority remains:
+Potential work:
 
-- correctness;
-- reproducibility;
-- test coverage;
-- explicit historical-data semantics;
-- explainable strategy behavior;
-- research usefulness.
+- persistent historical dataset cache
+- serialized backtest results
+- experiment configuration objects
+- event ledger
+- reproducible research run manifests
+- CI
+- packaging / public API cleanup
+- multiple underlyings
+- portfolio-level risk constraints
+
+# Non-Goals
+
+QuantResearch is not currently intended to be:
+
+- a live trading system
+- a broker integration
+- a low-latency engine
+- an investment recommendation system
+
+Current priorities remain:
+
+- correctness
+- reproducibility
+- explicit historical-data semantics
+- explainability
+- test coverage
+- research usefulness
